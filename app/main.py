@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
+from app.database import engine
+from app.models import Base
+from app.routers import prompts, arena, evals, generator
 
 app = FastAPI(
     title="PromptOps Backend — MindFlow",
@@ -17,6 +20,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def on_startup():
+    """Garante que as tabelas do PostgreSQL dedicado existam ao iniciar."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("[PromptOps Startup] Tabelas do PostgreSQL dedicado verificadas/criadas.")
+
+# Inclusão dos roteadores da API v1
+app.include_router(prompts.router, prefix="/api/v1")
+app.include_router(arena.router, prefix="/api/v1")
+app.include_router(evals.router, prefix="/api/v1")
+app.include_router(generator.router, prefix="/api/v1")
 
 @app.get("/health", tags=["Health"])
 async def health_check():
@@ -27,7 +42,6 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "eval_threshold": settings.EVAL_APPROVAL_THRESHOLD
     }
-
 
 @app.get("/", tags=["Root"])
 async def root():
