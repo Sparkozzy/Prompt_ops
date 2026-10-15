@@ -126,6 +126,10 @@ async def run_evaluations_batch(
         version.status = "approved"
 
     await session.commit()
-    await session.refresh(run)
+    
+    # Recarrega o run com os cases relacionados via selectinload
+    from sqlalchemy.orm import selectinload
+    stmt_run = select(EvalRun).options(selectinload(EvalRun.cases)).where(EvalRun.id == run.id)
+    result_run = await session.execute(stmt_run)
+    return result_run.scalar_one()
 
-    return run
