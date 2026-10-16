@@ -9,7 +9,8 @@ _openai_client: Optional[AsyncOpenAI] = None
 def get_openai_client() -> AsyncOpenAI:
     global _openai_client
     if _openai_client is None:
-        _openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        key = settings.get_effective_openai_key()
+        _openai_client = AsyncOpenAI(api_key=key)
     return _openai_client
 
 def render_prompt_template(template: str, variables: Dict[str, Any]) -> str:

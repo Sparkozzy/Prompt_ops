@@ -20,12 +20,13 @@ async def get_client_mcp_urls(prompt_id: Optional[int] = None, client_id: Option
     """
     try:
         supabase = get_production_supabase()
-        if client_id:
-            res = supabase.table("client_configurations").select("mcp_urls").eq("client_id", str(client_id)).execute()
-            if res.data and res.data[0].get("mcp_urls"):
-                return res.data[0]["mcp_urls"]
+        # Prioriza buscar por prompt_id pois é a chave do prompt em teste
         if prompt_id:
             res = supabase.table("client_configurations").select("mcp_urls").eq("prompt_id", int(prompt_id)).execute()
+            if res.data and res.data[0].get("mcp_urls"):
+                return res.data[0]["mcp_urls"]
+        if client_id:
+            res = supabase.table("client_configurations").select("mcp_urls").eq("client_id", str(client_id)).execute()
             if res.data and res.data[0].get("mcp_urls"):
                 return res.data[0]["mcp_urls"]
     except Exception as e:

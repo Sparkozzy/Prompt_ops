@@ -36,10 +36,9 @@ def get_production_supabase() -> Client:
     """
     global _supabase_client
     if _supabase_client is None:
-        if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
-            raise ValueError("SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórios.")
-        _supabase_client = create_client(
-            settings.SUPABASE_URL,
-            settings.SUPABASE_SERVICE_ROLE_KEY
-        )
+        url = settings.get_effective_supabase_url()
+        key = settings.get_effective_supabase_key()
+        if not url or not key:
+            raise ValueError("SUPABASE_URL/MASTER_SUPABASE_URL e chave são obrigatórios.")
+        _supabase_client = create_client(url, key)
     return _supabase_client
