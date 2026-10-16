@@ -128,7 +128,7 @@ async def test_compare_prompts(
     import traceback
     try:
         # As duas chamadas ao LLM continuam simultâneas (não usam a sessão do banco).
-        response_a, response_b = await asyncio.gather(run_ver(ver_a), run_ver(ver_b))
+        response_a, response_b = await asyncio.gather(run_ver(ver_a, tools_a, map_a), run_ver(ver_b, tools_b, map_b))
     except Exception as e:
         print("[ARENA TEST-COMPARE ERROR]", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Falha na comparação da Arena: {str(e)}")
