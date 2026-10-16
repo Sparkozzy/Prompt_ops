@@ -125,11 +125,13 @@ async def test_compare_prompts(
             latency_ms=latency
         )
 
+    import traceback
     try:
         # As duas chamadas ao LLM continuam simultâneas (não usam a sessão do banco).
         response_a, response_b = await asyncio.gather(run_ver(ver_a), run_ver(ver_b))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Falha ao consultar o modelo: {e}")
+        print("[ARENA TEST-COMPARE ERROR]", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Falha na comparação da Arena: {str(e)}")
 
     return {
         "version_a": response_a,
