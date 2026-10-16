@@ -20,10 +20,7 @@ async_session_maker = async_sessionmaker(
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Dependency para injeção de sessão do banco dedicado em rotas FastAPI."""
     async with async_session_maker() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session
 
 
 # Cliente Singleton Supabase (Produção)
