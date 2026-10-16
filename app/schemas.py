@@ -87,6 +87,16 @@ class EvalDatasetCreate(BaseModel):
     expected_tool_name: Optional[str] = None
 
 
+class EvalDatasetUpdate(BaseModel):
+    scenario_name: Optional[str] = None
+    channel: Optional[str] = None
+    input_data: Optional[Dict[str, Any]] = None
+    expected_criteria: Optional[str] = None
+    requires_tool: Optional[bool] = None
+    expected_tool_name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 class EvalDatasetRead(EvalDatasetCreate):
     id: UUID
     is_active: bool

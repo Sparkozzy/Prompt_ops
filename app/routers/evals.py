@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db_session
 from app.models import EvalDataset, EvalRun, EvalCaseResult, PromptVersion, get_utc_now
-from app.schemas import EvalDatasetCreate, EvalDatasetRead, EvalRunTrigger, EvalRunDetailRead
+from app.schemas import EvalDatasetCreate, EvalDatasetUpdate, EvalDatasetRead, EvalRunTrigger, EvalRunDetailRead
 from app.services.eval_service import evaluate_single_turn_case
 
 router = APIRouter(prefix="/evals", tags=["Evaluations"])
@@ -157,6 +157,28 @@ async def run_evaluations_batch(
     return result_run.scalar_one()
 
 
+@router.put("/datasets/{dataset_id}", response_model=EvalDatasetRead)
+async def update_eval_dataset_case(
+    dataset_id: UUID,
+    payload: EvalDatasetUpdate,
+    session: AsyncSession = Depends(get_db_session)
+):
+    """Atualiza os dados de um caso de teste existente."""
+    stmt = select(EvalDataset).where(EvalDataset.id == dataset_id)
+    res = await session.execute(stmt)
+    item = res.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Caso de teste não encontrado.")
+    
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(item, field, value)
+        
+    await session.commit()
+    await session.refresh(item)
+    return item
+
+
 @router.delete("/datasets/{dataset_id}")
 async def delete_eval_dataset_case(
     dataset_id: UUID,
@@ -173,3 +195,4 @@ async def delete_eval_dataset_case(
     item.is_active = False
     await session.commit()
     return {"success": True, "message": "Caso de teste desativado com sucesso."}
+
