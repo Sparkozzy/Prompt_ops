@@ -54,7 +54,9 @@ async def test_compare_prompts(
     stmt_a = select(PromptVersion).where(PromptVersion.id == payload.version_a_id)
     stmt_b = select(PromptVersion).where(PromptVersion.id == payload.version_b_id)
     
-    res_a, res_b = await asyncio.gather(session.execute(stmt_a), session.execute(stmt_b))
+    # AsyncSession não permite operações concorrentes: consultas em sequência.
+    res_a = await session.execute(stmt_a)
+    res_b = await session.execute(stmt_b)
     ver_a = res_a.scalar_one_or_none()
     ver_b = res_b.scalar_one_or_none()
 
@@ -83,7 +85,11 @@ async def test_compare_prompts(
             latency_ms=latency
         )
 
-    response_a, response_b = await asyncio.gather(run_ver(ver_a), run_ver(ver_b))
+    try:
+        # As duas chamadas ao LLM continuam simultâneas (não usam a sessão do banco).
+        response_a, response_b = await asyncio.gather(run_ver(ver_a), run_ver(ver_b))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Falha ao consultar o modelo: {e}")
 
     return {
         "version_a": response_a,
