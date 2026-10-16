@@ -163,7 +163,7 @@ async def publish_version_to_production(
     elif ch in ["insta", "instagram"]:
         target_column = "Prompt Insta"
 
-    # Atualiza no Supabase oficial
+    # Atualiza no Supabase oficial (Prompts)
     supabase = get_production_supabase()
     update_res = supabase.table("Prompts").update({
         target_column: version.prompt_text
@@ -171,6 +171,23 @@ async def publish_version_to_production(
 
     if not update_res.data:
         raise HTTPException(status_code=500, detail=f"Falha ao atualizar coluna '{target_column}' na tabela Prompts do Supabase.")
+
+    # Atualiza modelo e temperatura na tabela client_configurations do cliente correspondente
+    try:
+        config_update = {}
+        if version.model_name:
+            config_update["llm_model"] = version.model_name
+        if version.temperature is not None:
+            config_update["llm_temperature"] = version.temperature
+        
+        if config_update:
+            # Tenta atualizar pelo prompt_id ou pelo client_id
+            if version.prompt_id:
+                supabase.table("client_configurations").update(config_update).eq("prompt_id", int(version.prompt_id)).execute()
+            elif version.client_id:
+                supabase.table("client_configurations").update(config_update).eq("client_id", str(version.client_id)).execute()
+    except Exception as conf_err:
+        print(f"[Publish Warning] Falha ao sincronizar client_configurations: {conf_err}")
 
     # Marca como publicada no banco dedicado
     version.status = "published"
