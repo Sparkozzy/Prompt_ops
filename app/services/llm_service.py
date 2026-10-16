@@ -25,24 +25,75 @@ async def generate_chat_response(
     user_message: str,
     chat_history: List[Dict[str, str]],
     model: str = "gpt-4o",
-    temperature: float = 0.7
+    temperature: float = 0.7,
+    tools: Optional[List[Dict[str, Any]]] = None,
+    mcp_tool_map: Optional[Dict[str, str]] = None,
+    version_id: Optional[Any] = None
 ) -> Dict[str, Any]:
-    """Gera resposta via OpenAI para testes na Arena."""
+    """Gera resposta via OpenAI com suporte a Function Calling real via servidores MCP."""
     client = get_openai_client()
     messages = [{"role": "system", "content": system_prompt}]
     for msg in chat_history:
         messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
     messages.append({"role": "user", "content": user_message})
 
-    response = await client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature
-    )
+    kwargs: Dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature
+    }
+    if tools:
+        kwargs["tools"] = tools
 
+    response = await client.chat.completions.create(**kwargs)
     choice = response.choices[0]
+    tool_calls_executed = []
+
+    # Se o modelo decidiu acionar ferramentas reais (Function Calling)
+    if choice.message.tool_calls:
+        messages.append(choice.message)
+
+        for tc in choice.message.tool_calls:
+            tool_name = tc.function.name
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except Exception:
+                args = {}
+
+            target_url = mcp_tool_map.get(tool_name) if mcp_tool_map else "https://schedule-service-github.bkpxmb.easypanel.host/sse"
+
+            from app.services.mcp_service import execute_mcp_tool
+            exec_res = await execute_mcp_tool(
+                mcp_url=target_url,
+                tool_name=tool_name,
+                arguments=args,
+                version_id=version_id
+            )
+            tool_calls_executed.append(exec_res)
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": str(exec_res.get("output", ""))
+            })
+
+        # Segunda chamada ao modelo para formular a resposta final contextualizada com os dados da ferramenta
+        second_resp = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature
+        )
+        final_choice = second_resp.choices[0]
+        return {
+            "content": final_choice.message.content or "",
+            "tool_calls_executed": tool_calls_executed,
+            "tokens_input": (response.usage.prompt_tokens if response.usage else 0) + (second_resp.usage.prompt_tokens if second_resp.usage else 0),
+            "tokens_output": (response.usage.completion_tokens if response.usage else 0) + (second_resp.usage.completion_tokens if second_resp.usage else 0)
+        }
+
     return {
         "content": choice.message.content or "",
+        "tool_calls_executed": [],
         "tokens_input": response.usage.prompt_tokens if response.usage else 0,
         "tokens_output": response.usage.completion_tokens if response.usage else 0,
     }

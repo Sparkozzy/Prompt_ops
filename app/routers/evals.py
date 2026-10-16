@@ -20,6 +20,7 @@ async def create_eval_dataset_case(
     item = EvalDataset(
         prompt_id=payload.prompt_id,
         client_id=payload.client_id,
+        channel=payload.channel or "whatsapp",
         scenario_name=payload.scenario_name,
         test_type=payload.test_type,
         input_data=payload.input_data,
@@ -38,6 +39,7 @@ async def create_eval_dataset_case(
 async def list_eval_datasets(
     prompt_id: Optional[int] = Query(None),
     client_id: Optional[str] = Query(None),
+    channel: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_db_session)
 ):
     """Lista todos os casos de teste ativos para um prompt/cliente."""
@@ -46,6 +48,8 @@ async def list_eval_datasets(
         stmt = stmt.where(EvalDataset.prompt_id == prompt_id)
     if client_id is not None:
         stmt = stmt.where(EvalDataset.client_id == client_id)
+    if channel is not None:
+        stmt = stmt.where(EvalDataset.channel == channel)
     res = await session.execute(stmt)
     return res.scalars().all()
 
@@ -64,13 +68,25 @@ async def run_evaluations_batch(
     if not version:
         raise HTTPException(status_code=404, detail="Versão não encontrada.")
 
-    # Busca casos de teste
+    # Busca casos de teste filtrando por prompt_id e opcionalmente canal
     stmt_d = select(EvalDataset).where(
         EvalDataset.prompt_id == version.prompt_id,
         EvalDataset.is_active == True
     )
+    if hasattr(version, "channel") and version.channel:
+        stmt_d = stmt_d.where(EvalDataset.channel == version.channel)
+
     res_d = await session.execute(stmt_d)
     cases = res_d.scalars().all()
+
+    # Fallback se não houver casos filtrados por canal específico
+    if not cases:
+        stmt_fallback = select(EvalDataset).where(
+            EvalDataset.prompt_id == version.prompt_id,
+            EvalDataset.is_active == True
+        )
+        res_fb = await session.execute(stmt_fallback)
+        cases = res_fb.scalars().all()
 
     if not cases:
         raise HTTPException(status_code=400, detail="Nenhum caso de teste ativo cadastrado para este prompt.")
@@ -98,7 +114,12 @@ async def run_evaluations_batch(
             model_name=version.model_name,
             temperature=version.temperature,
             case_input=c.input_data,
-            expected_criteria=c.expected_criteria
+            expected_criteria=c.expected_criteria,
+            prompt_id=version.prompt_id,
+            client_id=version.client_id,
+            requires_tool=c.requires_tool,
+            expected_tool_name=c.expected_tool_name,
+            version_id=version.id
         )
         if eval_result["passed"]:
             passed_count += 1
@@ -109,6 +130,8 @@ async def run_evaluations_batch(
             passed=eval_result["passed"],
             generated_response=eval_result["generated_response"],
             judge_reasoning=eval_result["judge_reasoning"],
+            tool_called=eval_result.get("tool_called"),
+            tool_call_valid=eval_result.get("tool_call_valid"),
             execution_time_ms=eval_result["execution_time_ms"]
         )
         session.add(case_item)

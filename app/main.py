@@ -22,10 +22,13 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
-    """Garante que as tabelas do PostgreSQL dedicado existam ao iniciar."""
+    """Garante que as tabelas e novas colunas do PostgreSQL dedicado existam ao iniciar."""
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print("[PromptOps Startup] Tabelas do PostgreSQL dedicado verificadas/criadas.")
+        await conn.execute(text("ALTER TABLE prompt_versions ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'whatsapp';"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'whatsapp';"))
+    print("[PromptOps Startup] Tabelas e migrações do PostgreSQL dedicado concluídas.")
 
 # Inclusão dos roteadores da API v1
 app.include_router(prompts.router, prefix="/api/v1")

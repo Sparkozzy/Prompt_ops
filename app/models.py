@@ -21,6 +21,7 @@ class PromptVersion(Base):
     prompt_id = Column(BigInteger, nullable=False, index=True)  # ID do prompt na tabela oficial Prompts
     client_id = Column(String(100), nullable=False, index=True)
     client_name = Column(String(255), nullable=True)
+    channel = Column(String(50), default="whatsapp", nullable=False, index=True)  # whatsapp, ligacao, fup, instagram
     version_label = Column(String(50), nullable=False)  # ex: v1.0.0, v1.1.0-draft
     prompt_text = Column(Text, nullable=False)
     model_name = Column(String(100), default="gpt-4o")
@@ -44,6 +45,7 @@ class EvalDataset(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     prompt_id = Column(BigInteger, nullable=False, index=True)
     client_id = Column(String(100), nullable=False, index=True)
+    channel = Column(String(50), default="whatsapp", nullable=False, index=True)  # whatsapp, ligacao, fup, instagram
     scenario_name = Column(String(255), nullable=False)
     test_type = Column(String(50), default="single_turn")  # single_turn, multi_turn
     input_data = Column(JSONB, nullable=False)  # {"user_message": "...", "variables": {...}} ou {"dialog_turns": [...]}

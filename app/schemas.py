@@ -11,6 +11,7 @@ class PromptVersionBase(BaseModel):
     prompt_id: int
     client_id: str
     client_name: Optional[str] = None
+    channel: str = "whatsapp"
     version_label: str
     prompt_text: str
     model_name: str = "gpt-4o"
@@ -77,6 +78,7 @@ class ArenaTurnResponse(BaseModel):
 class EvalDatasetCreate(BaseModel):
     prompt_id: int
     client_id: str
+    channel: str = "whatsapp"
     scenario_name: str
     test_type: str = "single_turn"  # single_turn ou multi_turn
     input_data: Dict[str, Any]

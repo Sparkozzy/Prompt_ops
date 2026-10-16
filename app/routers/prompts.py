@@ -11,19 +11,66 @@ router = APIRouter(prefix="/prompts", tags=["Prompts"])
 
 @router.get("/production/list")
 async def list_production_prompts():
-    """Lista todos os prompts oficiais diretamente da tabela Prompts no Supabase."""
+    """Lista todos os prompts oficiais diretamente da tabela Prompts no Supabase com mapeamento de canais."""
     supabase = get_production_supabase()
-    res = supabase.table("Prompts").select("id, created_at, \"Nome do cliente\", \"Pormpt_Name\", \"Ligação/txt\"").order("id", desc=True).limit(50).execute()
-    return res.data
+    res = supabase.table("Prompts").select(
+        'id, created_at, "Nome do cliente", "Pormpt_Name", "Prompt_Text", "Ligação/txt", "prompt_fup", "Prompt Insta"'
+    ).order("id", desc=True).limit(100).execute()
+
+    items = []
+    for p in res.data:
+        channels = []
+        if p.get("Prompt_Text") and str(p.get("Prompt_Text")).strip():
+            channels.append("whatsapp")
+        if p.get("Ligação/txt") and str(p.get("Ligação/txt")).strip():
+            channels.append("ligacao")
+        if p.get("prompt_fup") and str(p.get("prompt_fup")).strip():
+            channels.append("fup")
+        if p.get("Prompt Insta") and str(p.get("Prompt Insta")).strip():
+            channels.append("instagram")
+        if not channels:
+            channels.append("whatsapp")
+
+        items.append({
+            "id": p["id"],
+            "created_at": p.get("created_at"),
+            "Nome do cliente": p.get("Nome do cliente") or "Sem cliente",
+            "Pormpt_Name": p.get("Pormpt_Name") or "Prompt",
+            "channels": channels,
+            "has_whatsapp": "whatsapp" in channels,
+            "has_ligacao": "ligacao" in channels,
+            "has_fup": "fup" in channels,
+            "has_insta": "instagram" in channels
+        })
+    return items
 
 @router.get("/production/{prompt_id}")
-async def get_production_prompt(prompt_id: int):
-    """Busca um prompt oficial específico no Supabase para importação/visualização."""
+async def get_production_prompt(prompt_id: int, channel: str = Query("whatsapp")):
+    """Busca um prompt oficial específico no Supabase para importação/visualização conforme o canal."""
     supabase = get_production_supabase()
     res = supabase.table("Prompts").select("*").eq("id", prompt_id).single().execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Prompt não encontrado no Supabase.")
-    return res.data
+
+    data = res.data
+    # Extrai o texto conforme o canal solicitado
+    ch = (channel or "whatsapp").lower()
+    if ch in ["ligacao", "ligação", "voz"]:
+        text = data.get("Ligação/txt") or ""
+        resolved_channel = "ligacao"
+    elif ch in ["fup", "followup", "follow_up"]:
+        text = data.get("prompt_fup") or ""
+        resolved_channel = "fup"
+    elif ch in ["insta", "instagram"]:
+        text = data.get("Prompt Insta") or ""
+        resolved_channel = "instagram"
+    else:
+        text = data.get("Prompt_Text") or ""
+        resolved_channel = "whatsapp"
+
+    data["Prompt_Text"] = text
+    data["channel"] = resolved_channel
+    return data
 
 @router.post("/versions", response_model=PromptVersionRead)
 async def create_prompt_version(
@@ -35,6 +82,7 @@ async def create_prompt_version(
         prompt_id=payload.prompt_id,
         client_id=payload.client_id,
         client_name=payload.client_name,
+        channel=payload.channel or "whatsapp",
         version_label=payload.version_label,
         prompt_text=payload.prompt_text,
         model_name=payload.model_name,
@@ -54,14 +102,17 @@ async def create_prompt_version(
 async def list_prompt_versions(
     prompt_id: Optional[int] = Query(None),
     client_id: Optional[str] = Query(None),
+    channel: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_db_session)
 ):
-    """Lista o histórico de versões do banco dedicado."""
+    """Lista o histórico de versões do banco dedicado, com filtro opcional por canal."""
     stmt = select(PromptVersion).order_by(desc(PromptVersion.created_at))
     if prompt_id is not None:
         stmt = stmt.where(PromptVersion.prompt_id == prompt_id)
     if client_id is not None:
         stmt = stmt.where(PromptVersion.client_id == client_id)
+    if channel is not None:
+        stmt = stmt.where(PromptVersion.channel == channel)
     
     result = await session.execute(stmt)
     return result.scalars().all()
@@ -87,7 +138,7 @@ async def publish_version_to_production(
     """
     Quality Gate & Deploy:
     Apenas publica se eval_score >= 0.90 (ou 90%).
-    Atualiza a linha existente na tabela Prompts do Supabase mantendo o mesmo id.
+    Atualiza a linha existente na coluna correta da tabela Prompts do Supabase mantendo o mesmo id.
     """
     stmt = select(PromptVersion).where(PromptVersion.id == payload.version_id)
     result = await session.execute(stmt)
@@ -102,16 +153,24 @@ async def publish_version_to_production(
             detail=f"Quality Gate Bloqueado: A versão precisa atingir no mínimo 90% de aprovação (score atual: {((version.eval_score or 0) * 100):.1f}%)."
         )
 
+    # Identifica a coluna oficial correspondente ao canal
+    ch = (getattr(version, "channel", "whatsapp") or "whatsapp").lower()
+    target_column = "Prompt_Text"
+    if ch in ["ligacao", "ligação", "voz"]:
+        target_column = "Ligação/txt"
+    elif ch in ["fup", "followup", "follow_up"]:
+        target_column = "prompt_fup"
+    elif ch in ["insta", "instagram"]:
+        target_column = "Prompt Insta"
+
     # Atualiza no Supabase oficial
     supabase = get_production_supabase()
-    now_iso = get_utc_now().isoformat()
-    
     update_res = supabase.table("Prompts").update({
-        "Prompt_Text": version.prompt_text
+        target_column: version.prompt_text
     }).eq("id", version.prompt_id).execute()
 
     if not update_res.data:
-        raise HTTPException(status_code=500, detail="Falha ao atualizar tabela Prompts no Supabase.")
+        raise HTTPException(status_code=500, detail=f"Falha ao atualizar coluna '{target_column}' na tabela Prompts do Supabase.")
 
     # Marca como publicada no banco dedicado
     version.status = "published"
