@@ -156,3 +156,20 @@ async def run_evaluations_batch(
     result_run = await session.execute(stmt_run)
     return result_run.scalar_one()
 
+
+@router.delete("/datasets/{dataset_id}")
+async def delete_eval_dataset_case(
+    dataset_id: UUID,
+    session: AsyncSession = Depends(get_db_session)
+):
+    """Desativa ou exclui um caso de teste do dataset de avaliações."""
+    stmt = select(EvalDataset).where(EvalDataset.id == dataset_id)
+    res = await session.execute(stmt)
+    item = res.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Caso de teste não encontrado.")
+    
+    # Soft delete (ou hard delete)
+    item.is_active = False
+    await session.commit()
+    return {"success": True, "message": "Caso de teste desativado com sucesso."}
