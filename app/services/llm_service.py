@@ -367,8 +367,53 @@ async def generate_prompt_meta_suggestion(
         "rodada_atual": 1,
         "imutaveis_ativas": ["R001", "R002", "R003_T01"],
         "erros_evitados": ["E001", "E002"]
-    })
     updated_memory = raw_json.get("updated_active_memory_xml", effective_memory)
+
+    # GARANTIA DETERMINÍSTICA POPPERIANA (PromptOps & Antigravity):
+    # Se o prompt foi modificado mas o modelo não chamou a suíte de evals durante o ReAct,
+    # executa automaticamente a criação de caso de refutação e roda a suíte de evals para validação imediata.
+    called_tool_names = [t.get("tool_name") for t in tools_consulted]
+    if prompt_modified and "run_prompt_eval_suite" not in called_tool_names:
+        try:
+            # 1. Se ainda não criou caso de teste nesta rodada, cria um caso de refutação adversarial
+            if "manage_prompt_eval_case" not in called_tool_names:
+                eval_case_res = await execute_generator_tool_call(
+                    tool_name="manage_prompt_eval_case",
+                    arguments={
+                        "action": "create",
+                        "scenario_name": f"REF: Validação de alteração — {instruction[:45]}",
+                        "user_message": instruction,
+                        "expected_criteria": f"A resposta do assistente deve cumprir estritamente a nova diretriz: {instruction}",
+                        "is_refutation_case": True,
+                    },
+                    context=tool_context,
+                )
+                b_case = dict(eval_case_res["badge"])
+                b_case["arguments"] = {"action": "create", "is_refutation_case": True}
+                b_case["output"] = eval_case_res.get("output")
+                tools_consulted.append(b_case)
+
+            # 2. Executa a suíte completa de evals contra o novo prompt em tempo real
+            eval_suite_res = await execute_generator_tool_call(
+                tool_name="run_prompt_eval_suite",
+                arguments={
+                    "live_prompt_text": suggested,
+                    "test_live_editor_prompt": True,
+                },
+                context=tool_context,
+            )
+            b_suite = dict(eval_suite_res["badge"])
+            b_suite["arguments"] = {"test_live_editor_prompt": True}
+            b_suite["output"] = eval_suite_res.get("output")
+            tools_consulted.append(b_suite)
+
+            eval_out = eval_suite_res.get("output", {})
+            pct = eval_out.get("approval_pct", 0)
+            passed = eval_out.get("passed_cases", 0)
+            total = eval_out.get("total_cases", 0)
+            explanation += f"\n\n🧪 **Validação Científica em Tempo Real (Evals):** {pct}% de aprovação ({passed}/{total} casos aprovados)."
+        except Exception as e:
+            print(f"[Deterministic Eval Trigger Warning] {e}")
 
     # Gera diff visual unificado (estilo git diff)
     diff_lines = list(difflib.unified_diff(
