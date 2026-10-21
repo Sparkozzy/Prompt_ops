@@ -367,6 +367,7 @@ async def generate_prompt_meta_suggestion(
         "rodada_atual": 1,
         "imutaveis_ativas": ["R001", "R002", "R003_T01"],
         "erros_evitados": ["E001", "E002"]
+    })
     updated_memory = raw_json.get("updated_active_memory_xml", effective_memory)
 
     # GARANTIA DETERMINÍSTICA POPPERIANA (PromptOps & Antigravity):
