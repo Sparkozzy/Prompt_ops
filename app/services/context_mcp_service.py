@@ -1,14 +1,24 @@
 import json
 import re
+from uuid import UUID
 from typing import Dict, Any, List, Optional
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import select, desc
 from sqlalchemy.orm import selectinload
 from supabase import create_client
 from app.database import async_session_maker, get_production_supabase
-from app.models import EvalRun, EvalCaseResult, ToolExecutionLog, PromptEngineeringDoc
+from app.models import (
+    EvalDataset,
+    EvalRun,
+    EvalCaseResult,
+    PromptVersion,
+    ToolExecutionLog,
+    PromptEngineeringDoc,
+    get_utc_now,
+)
 from app.services.rag_service import search_rag_chunks
 from app.services.mcp_service import get_client_mcp_urls, get_client_tools_and_map
+from app.services.eval_service import evaluate_single_turn_case
 
 # Instância oficial FastMCP expondo instruções ricas e detalhadas para Agentes
 prompt_ops_mcp = FastMCP(
@@ -466,6 +476,305 @@ async def update_mindflow_engineering_doc_impl(
         }
 
 
+def _serialize_eval_case(c: EvalDataset) -> Dict[str, Any]:
+    return {
+        "id": str(c.id),
+        "prompt_id": c.prompt_id,
+        "client_id": c.client_id,
+        "channel": c.channel,
+        "scenario_name": c.scenario_name,
+        "test_type": c.test_type,
+        "input_data": c.input_data,
+        "expected_criteria": c.expected_criteria,
+        "requires_tool": bool(c.requires_tool),
+        "expected_tool_name": c.expected_tool_name,
+        "is_refutation_case": bool(getattr(c, "is_refutation_case", False)),
+        "forbidden_literal_ids": getattr(c, "forbidden_literal_ids", None) or [],
+        "forbidden_symbolic_placeholders": getattr(c, "forbidden_symbolic_placeholders", None) or [],
+        "created_by": getattr(c, "created_by", None),
+        "updated_by": getattr(c, "updated_by", None),
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+    }
+
+
+async def list_prompt_eval_datasets_impl(
+    prompt_id: Optional[int] = None,
+    channel: Optional[str] = None,
+    _session_factory: Any = None,
+) -> Dict[str, Any]:
+    """Lista todos os casos de teste ativos (incluindo Casos de Refutação Popperianos) de um prompt/canal."""
+    factory = _session_factory or async_session_maker
+    async with factory() as session:
+        stmt = select(EvalDataset).where(EvalDataset.is_active == True).order_by(desc(EvalDataset.created_at))
+        if prompt_id is not None:
+            stmt = stmt.where(EvalDataset.prompt_id == int(prompt_id))
+        if channel:
+            stmt = stmt.where(EvalDataset.channel == channel)
+        res = await session.execute(stmt)
+        rows = res.scalars().all()
+        cases = [_serialize_eval_case(r) for r in rows]
+        return {
+            "prompt_id": prompt_id,
+            "channel": channel,
+            "total_cases": len(cases),
+            "refutation_cases_count": sum(1 for x in cases if x.get("is_refutation_case")),
+            "cases": cases,
+        }
+
+
+async def manage_prompt_eval_case_impl(
+    action: str,
+    prompt_id: Optional[int] = None,
+    client_id: Optional[str] = None,
+    channel: str = "whatsapp",
+    case_id: Optional[str] = None,
+    scenario_name: Optional[str] = None,
+    user_message: Optional[str] = None,
+    input_data: Optional[Dict[str, Any]] = None,
+    expected_criteria: Optional[str] = None,
+    requires_tool: bool = False,
+    expected_tool_name: Optional[str] = None,
+    is_refutation_case: bool = False,
+    forbidden_literal_ids: Optional[List[str]] = None,
+    forbidden_symbolic_placeholders: Optional[List[str]] = None,
+    author_email: str = "prompt_ops_copilot",
+    _session_factory: Any = None,
+) -> Dict[str, Any]:
+    """
+    Cria, edita ou exclui (soft-delete) um caso de teste de Evals seguindo o protocolo científico de Prompt Science:
+    suporta Casos de Refutação Popperianos (is_refutation_case=True) e guardrails anti-contaminação Tipo A/B.
+    """
+    act = (action or "create").strip().lower()
+    factory = _session_factory or async_session_maker
+
+    async with factory() as session:
+        if act == "create":
+            if prompt_id is None:
+                raise ValueError("prompt_id é obrigatório para criar um caso de Eval.")
+            final_input = input_data if input_data is not None else {"user_message": user_message or ""}
+            item = EvalDataset(
+                prompt_id=int(prompt_id),
+                client_id=str(client_id or prompt_id),
+                channel=channel or "whatsapp",
+                scenario_name=scenario_name or "Caso de Teste Científico",
+                test_type="single_turn",
+                input_data=final_input,
+                expected_criteria=expected_criteria or "",
+                requires_tool=bool(requires_tool),
+                expected_tool_name=expected_tool_name,
+                is_refutation_case=bool(is_refutation_case),
+                forbidden_literal_ids=forbidden_literal_ids or [],
+                forbidden_symbolic_placeholders=forbidden_symbolic_placeholders or [],
+                created_by=author_email,
+                is_active=True,
+                created_at=get_utc_now(),
+                updated_at=get_utc_now(),
+            )
+            session.add(item)
+            await session.commit()
+            await session.refresh(item)
+            return {"action": "created", "case": _serialize_eval_case(item)}
+
+        if not case_id:
+            raise ValueError("case_id é obrigatório para update ou delete.")
+        cid = UUID(str(case_id)) if not isinstance(case_id, UUID) else case_id
+        res = await session.execute(select(EvalDataset).where(EvalDataset.id == cid))
+        item = res.scalar_one_or_none()
+        if not item:
+            raise ValueError(f"Caso de teste {case_id} não encontrado.")
+
+        if act == "update":
+            if scenario_name is not None:
+                item.scenario_name = scenario_name
+            if user_message is not None:
+                curr = dict(item.input_data or {})
+                curr["user_message"] = user_message
+                item.input_data = curr
+            elif input_data is not None:
+                item.input_data = input_data
+            if expected_criteria is not None:
+                item.expected_criteria = expected_criteria
+            if requires_tool is not None:
+                item.requires_tool = bool(requires_tool)
+            if expected_tool_name is not None:
+                item.expected_tool_name = expected_tool_name
+            if is_refutation_case is not None:
+                item.is_refutation_case = bool(is_refutation_case)
+            if forbidden_literal_ids is not None:
+                item.forbidden_literal_ids = forbidden_literal_ids
+            if forbidden_symbolic_placeholders is not None:
+                item.forbidden_symbolic_placeholders = forbidden_symbolic_placeholders
+            item.updated_by = author_email
+            item.updated_at = get_utc_now()
+            await session.commit()
+            await session.refresh(item)
+            return {"action": "updated", "case": _serialize_eval_case(item)}
+
+        if act == "delete":
+            item.is_active = False
+            item.deleted_by = author_email
+            item.deleted_at = get_utc_now()
+            await session.commit()
+            return {"action": "deleted", "case_id": str(case_id), "deleted_by": author_email}
+
+        raise ValueError(f"Ação '{action}' inválida. Use 'create', 'update' ou 'delete'.")
+
+
+async def run_prompt_eval_suite_impl(
+    version_id: Optional[Any] = None,
+    prompt_id: Optional[int] = None,
+    client_id: Optional[str] = None,
+    channel: Optional[str] = "whatsapp",
+    live_prompt_text: Optional[str] = None,
+    test_live_editor_prompt: bool = True,
+    _session_factory: Any = None,
+) -> Dict[str, Any]:
+    """
+    Executa a bateria completa de Evals (com chamadas MCP reais, LLM Judge e Detector de Contaminação Tipo A/B).
+    Se uma version_id estiver selecionada, registra a EvalRun no banco e atualiza o eval_score da versão
+    (liberando o Quality Gate >= 90%). Se test_live_editor_prompt=True e live_prompt_text for fornecido,
+    avalia o texto em edição ao vivo.
+    """
+    factory = _session_factory or async_session_maker
+    async with factory() as session:
+        version_obj = None
+        if version_id:
+            try:
+                vid = UUID(str(version_id)) if not isinstance(version_id, UUID) else version_id
+                res_v = await session.execute(select(PromptVersion).where(PromptVersion.id == vid))
+                version_obj = res_v.scalar_one_or_none()
+            except Exception:
+                version_obj = None
+
+        eff_prompt_id = int(prompt_id or (version_obj.prompt_id if version_obj else 0))
+        eff_client_id = str(client_id or (version_obj.client_id if version_obj else eff_prompt_id))
+        eff_channel = channel or (version_obj.channel if version_obj else "whatsapp")
+        eff_model = version_obj.model_name if version_obj else "gpt-4.1"
+        eff_temp = version_obj.temperature if version_obj else 0.7
+        eff_text = (
+            live_prompt_text
+            if (test_live_editor_prompt and live_prompt_text)
+            else (version_obj.prompt_text if version_obj else (live_prompt_text or ""))
+        )
+
+        stmt_d = select(EvalDataset).where(
+            EvalDataset.prompt_id == eff_prompt_id,
+            EvalDataset.is_active == True,
+        )
+        if eff_channel:
+            stmt_d = stmt_d.where(EvalDataset.channel == eff_channel)
+        res_d = await session.execute(stmt_d)
+        cases = res_d.scalars().all()
+
+        if not cases:
+            stmt_fb = select(EvalDataset).where(
+                EvalDataset.prompt_id == eff_prompt_id,
+                EvalDataset.is_active == True,
+            )
+            res_fb = await session.execute(stmt_fb)
+            cases = res_fb.scalars().all()
+
+        if not cases:
+            return {
+                "error": "Nenhum caso de teste ativo cadastrado para este prompt. Crie ao menos 1 caso com manage_prompt_eval_case antes de rodar.",
+                "total_cases": 0,
+                "passed_cases": 0,
+                "approval_rate": 0.0,
+                "quality_gate_passed": False,
+            }
+
+        run_obj = None
+        if version_obj:
+            # Se o texto ao vivo do editor foi testado e difere da versão draft, sincroniza na versão draft não-prod
+            if test_live_editor_prompt and live_prompt_text and not version_obj.version_label.startswith("prod-"):
+                version_obj.prompt_text = live_prompt_text
+            run_obj = EvalRun(
+                version_id=version_obj.id,
+                prompt_id=eff_prompt_id,
+                status="running",
+                total_cases=len(cases),
+                passed_cases=0,
+                approval_rate=0.0,
+                triggered_by="copilot_agent",
+                started_at=get_utc_now(),
+            )
+            session.add(run_obj)
+            await session.commit()
+            await session.refresh(run_obj)
+
+        passed_count = 0
+        detailed_results = []
+
+        for c in cases:
+            ev = await evaluate_single_turn_case(
+                prompt_text=eff_text,
+                model_name=eff_model,
+                temperature=eff_temp,
+                case_input=c.input_data,
+                expected_criteria=c.expected_criteria,
+                prompt_id=eff_prompt_id,
+                client_id=eff_client_id,
+                requires_tool=bool(c.requires_tool),
+                expected_tool_name=c.expected_tool_name,
+                version_id=version_obj.id if version_obj else None,
+                forbidden_literal_ids=getattr(c, "forbidden_literal_ids", None) or [],
+                forbidden_symbolic_placeholders=getattr(c, "forbidden_symbolic_placeholders", None) or [],
+            )
+            if ev["passed"]:
+                passed_count += 1
+
+            if run_obj:
+                case_row = EvalCaseResult(
+                    run_id=run_obj.id,
+                    dataset_id=c.id,
+                    passed=ev["passed"],
+                    generated_response=ev["generated_response"],
+                    judge_reasoning=ev["judge_reasoning"],
+                    tool_called=ev.get("tool_called"),
+                    tool_call_valid=ev.get("tool_call_valid"),
+                    execution_time_ms=ev["execution_time_ms"],
+                )
+                session.add(case_row)
+
+            detailed_results.append({
+                "dataset_id": str(c.id),
+                "scenario_name": c.scenario_name,
+                "is_refutation_case": bool(getattr(c, "is_refutation_case", False)),
+                "passed": ev["passed"],
+                "is_contaminated": ev.get("is_contaminated", False),
+                "contamination_reason": ev.get("contamination_reason"),
+                "generated_response": ev["generated_response"],
+                "judge_reasoning": ev["judge_reasoning"],
+                "tool_called": ev.get("tool_called"),
+                "tool_call_valid": ev.get("tool_call_valid"),
+                "execution_time_ms": ev["execution_time_ms"],
+            })
+
+        approval_rate = passed_count / len(cases)
+        if run_obj and version_obj:
+            run_obj.passed_cases = passed_count
+            run_obj.approval_rate = approval_rate
+            run_obj.status = "completed"
+            run_obj.completed_at = get_utc_now()
+            version_obj.eval_score = approval_rate
+            if approval_rate >= 0.90 and not version_obj.version_label.startswith("prod-"):
+                version_obj.status = "approved"
+            await session.commit()
+
+        return {
+            "run_id": str(run_obj.id) if run_obj else None,
+            "version_id": str(version_obj.id) if version_obj else None,
+            "version_label": version_obj.version_label if version_obj else "live_editor",
+            "total_cases": len(cases),
+            "passed_cases": passed_count,
+            "failed_cases": len(cases) - passed_count,
+            "approval_rate": approval_rate,
+            "approval_pct": round(approval_rate * 100),
+            "quality_gate_passed": approval_rate >= 0.90,
+            "cases": detailed_results,
+        }
+
+
 # ============================================================================
 # Registro das Ferramentas no FastMCP Server (para clientes SSE externos)
 # ============================================================================
@@ -604,6 +913,89 @@ async def mcp_update_mindflow_engineering_doc(
         content=content,
         updated_by=updated_by,
         change_summary=change_summary,
+    )
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@prompt_ops_mcp.tool(
+    name="list_prompt_eval_datasets",
+    description=(
+        "QUANDO USAR: Sempre que precisar listar os casos de teste e Casos de Refutação Científica (Evals) "
+        "cadastrados para um prompt e canal antes de criar novos casos ou rodar a bateria."
+    ),
+)
+async def mcp_list_prompt_eval_datasets(
+    prompt_id: int,
+    channel: Optional[str] = None,
+) -> str:
+    res = await list_prompt_eval_datasets_impl(prompt_id=prompt_id, channel=channel)
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@prompt_ops_mcp.tool(
+    name="manage_prompt_eval_case",
+    description=(
+        "QUANDO USAR: Sempre que precisar criar ('create'), editar ('update') ou excluir ('delete') um caso de teste "
+        "ou Caso de Refutação Científica Popperiano nos Evals do prompt. "
+        "REGRA CIENTÍFICA (prompt_engineer.md): Ao testar uma hipótese ou corrigir um bug de atendimento/tools, "
+        "defina is_refutation_case=True, preencha forbidden_literal_ids (IDs de casos antigos que não podem vazar - Contaminação Tipo A) "
+        "e forbidden_symbolic_placeholders (nomes de variáveis simbólicas que não podem ser enviadas cruas - Contaminação Tipo B)."
+    ),
+)
+async def mcp_manage_prompt_eval_case(
+    action: str,
+    prompt_id: Optional[int] = None,
+    client_id: Optional[str] = None,
+    channel: str = "whatsapp",
+    case_id: Optional[str] = None,
+    scenario_name: Optional[str] = None,
+    user_message: Optional[str] = None,
+    expected_criteria: Optional[str] = None,
+    requires_tool: bool = False,
+    expected_tool_name: Optional[str] = None,
+    is_refutation_case: bool = False,
+    forbidden_literal_ids: Optional[List[str]] = None,
+    forbidden_symbolic_placeholders: Optional[List[str]] = None,
+) -> str:
+    res = await manage_prompt_eval_case_impl(
+        action=action,
+        prompt_id=prompt_id,
+        client_id=client_id,
+        channel=channel,
+        case_id=case_id,
+        scenario_name=scenario_name,
+        user_message=user_message,
+        expected_criteria=expected_criteria,
+        requires_tool=requires_tool,
+        expected_tool_name=expected_tool_name,
+        is_refutation_case=is_refutation_case,
+        forbidden_literal_ids=forbidden_literal_ids,
+        forbidden_symbolic_placeholders=forbidden_symbolic_placeholders,
+    )
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@prompt_ops_mcp.tool(
+    name="run_prompt_eval_suite",
+    description=(
+        "QUANDO USAR: Sempre que o usuário pedir para rodar os Evals da versão atual ou quando você quiser validar "
+        "cientificamente as alterações aplicadas no prompt contra os casos de teste e refutação (Quality Gate >= 90%). "
+        "Executa as chamadas MCP reais, o Detector de Contaminação Tipo A/B e o LLM Juiz, atualizando o eval_score da versão."
+    ),
+)
+async def mcp_run_prompt_eval_suite(
+    version_id: Optional[str] = None,
+    prompt_id: Optional[int] = None,
+    channel: str = "whatsapp",
+    live_prompt_text: Optional[str] = None,
+    test_live_editor_prompt: bool = True,
+) -> str:
+    res = await run_prompt_eval_suite_impl(
+        version_id=version_id,
+        prompt_id=prompt_id,
+        channel=channel,
+        live_prompt_text=live_prompt_text,
+        test_live_editor_prompt=test_live_editor_prompt,
     )
     return json.dumps(res, ensure_ascii=False, indent=2)
 
@@ -779,6 +1171,102 @@ def get_generator_openai_tools() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_prompt_eval_datasets",
+                "description": (
+                    "QUANDO USAR: Acione quando precisar listar todos os casos de teste de Evals e Casos de Refutação Científica "
+                    "ativos cadastrados para o prompt/canal atual."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "manage_prompt_eval_case",
+                "description": (
+                    "QUANDO USAR: Acione sempre que o usuário pedir para criar, editar ou excluir um caso de teste de Eval, "
+                    "ou quando você criar um Caso de Refutação Científica Popperiano (prompt_engineer.md) para testar uma hipótese/correção. "
+                    "COMO USAR: Passe action='create' (ou 'update'/'delete'), scenario_name, user_message, expected_criteria (rubrica rigorosa para o LLM Judge), "
+                    "requires_tool, expected_tool_name, is_refutation_case=True (se for teste de refutação), "
+                    "forbidden_literal_ids (IDs antigos proibidos - Contaminação Tipo A) e forbidden_symbolic_placeholders (ex: '[singleAccountId]' - Contaminação Tipo B)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["create", "update", "delete"],
+                            "description": "Operação sobre o caso de teste.",
+                        },
+                        "case_id": {
+                            "type": "string",
+                            "description": "UUID do caso de teste (obrigatório apenas para 'update' ou 'delete').",
+                        },
+                        "scenario_name": {
+                            "type": "string",
+                            "description": "Nome descritivo do cenário (ex: 'REF-01: Novo morador Carlos no Condomínio Solar').",
+                        },
+                        "user_message": {
+                            "type": "string",
+                            "description": "Mensagem enviada pelo lead/usuário para testar o agente.",
+                        },
+                        "expected_criteria": {
+                            "type": "string",
+                            "description": "Rubrica objetiva de aprovação avaliada pelo LLM Juiz (o que a resposta/tool DEVE e NÃO PODE fazer).",
+                        },
+                        "requires_tool": {
+                            "type": "boolean",
+                            "description": "Se True, reprova automaticamente caso o agente não acione a ferramenta MCP esperada.",
+                        },
+                        "expected_tool_name": {
+                            "type": "string",
+                            "description": "Nome exato da tool MCP esperada (ex: 'getUserByPhone', 'check_availability').",
+                        },
+                        "is_refutation_case": {
+                            "type": "boolean",
+                            "description": "True se este caso for um Experimento de Refutação Científica Popperiano (out-of-distribution/adversarial).",
+                        },
+                        "forbidden_literal_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Lista de IDs literais de casos antigos que jamais podem aparecer nos argumentos das tools (Contaminação Tipo A).",
+                        },
+                        "forbidden_symbolic_placeholders": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Lista de placeholders simbólicos (ex: '[singleAccountId]', 'singleAccountId') que não podem ser enviados crus para a tool (Contaminação Tipo B).",
+                        },
+                    },
+                    "required": ["action"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_prompt_eval_suite",
+                "description": (
+                    "QUANDO USAR: Acione quando o usuário pedir para rodar a bateria de Evals ou quando você quiser validar "
+                    "cientificamente o prompt atual contra os casos de teste cadastrados (Quality Gate >= 90%). "
+                    "Executa as chamadas MCP reais, o Detector de Contaminação Tipo A/B e o LLM Juiz, retornando o placar completo e atualizando o eval_score da versão."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "test_live_editor_prompt": {
+                            "type": "boolean",
+                            "description": "Se True (padrão), avalia o texto em tempo real do editor (incluindo alterações recém-feitas).",
+                        },
+                    },
+                },
+            },
+        },
     ]
 
 
@@ -789,6 +1277,9 @@ TOOL_BADGE_LABELS: Dict[str, str] = {
     "inspect_client_mcp_schemas": "🛠️ Inspecionou Schemas MCP do Cliente",
     "read_mindflow_engineering_docs": "📖 Consultou Docs de Engenharia & Hipóteses",
     "update_mindflow_engineering_doc": "✍️ Atualizou Doc de Hipóteses/Memória Compartilhada",
+    "list_prompt_eval_datasets": "📋 Listou Casos de Teste (Evals)",
+    "manage_prompt_eval_case": "🧪 Gerenciou Caso de Teste / Refutação (Evals)",
+    "run_prompt_eval_suite": "🚀 Executou Bateria Científica de Evals",
 }
 
 
@@ -807,6 +1298,7 @@ async def execute_generator_tool_call(
     version_id = context.get("version_id")
     arena_history = context.get("arena_history")
     failing_examples = context.get("failing_examples")
+    current_prompt = context.get("current_prompt")
     session_factory = context.get("_session_factory")
 
     label = TOOL_BADGE_LABELS.get(tool_name, f"⚡ Tool: {tool_name}")
@@ -879,8 +1371,58 @@ async def execute_generator_tool_call(
         summary = f"{doc_key} atualizado para v{res.get('version', 1)}"
         return {"output": res, "badge": {"tool_name": tool_name, "label": label, "summary": summary}}
 
+    if tool_name == "list_prompt_eval_datasets":
+        res = await list_prompt_eval_datasets_impl(
+            prompt_id=arguments.get("prompt_id") or prompt_id,
+            channel=arguments.get("channel") or channel,
+            _session_factory=session_factory,
+        )
+        summary = f"{res.get('total_cases', 0)} caso(s) de Eval listado(s) ({res.get('refutation_cases_count', 0)} de refutação)"
+        return {"output": res, "badge": {"tool_name": tool_name, "label": label, "summary": summary}}
+
+    if tool_name == "manage_prompt_eval_case":
+        res = await manage_prompt_eval_case_impl(
+            action=arguments.get("action", "create"),
+            prompt_id=arguments.get("prompt_id") or prompt_id,
+            client_id=arguments.get("client_id") or client_id,
+            channel=arguments.get("channel") or channel or "whatsapp",
+            case_id=arguments.get("case_id"),
+            scenario_name=arguments.get("scenario_name"),
+            user_message=arguments.get("user_message"),
+            input_data=arguments.get("input_data"),
+            expected_criteria=arguments.get("expected_criteria"),
+            requires_tool=bool(arguments.get("requires_tool", False)),
+            expected_tool_name=arguments.get("expected_tool_name"),
+            is_refutation_case=bool(arguments.get("is_refutation_case", False)),
+            forbidden_literal_ids=arguments.get("forbidden_literal_ids"),
+            forbidden_symbolic_placeholders=arguments.get("forbidden_symbolic_placeholders"),
+            author_email="prompt_ops_copilot",
+            _session_factory=session_factory,
+        )
+        act_label = res.get("action", "operado")
+        c_name = (res.get("case") or {}).get("scenario_name") or arguments.get("case_id") or ""
+        summary = f"Caso {act_label}: {str(c_name)[:40]}"
+        return {"output": res, "badge": {"tool_name": tool_name, "label": label, "summary": summary}}
+
+    if tool_name == "run_prompt_eval_suite":
+        res = await run_prompt_eval_suite_impl(
+            version_id=arguments.get("version_id") or version_id,
+            prompt_id=arguments.get("prompt_id") or prompt_id,
+            client_id=arguments.get("client_id") or client_id,
+            channel=arguments.get("channel") or channel or "whatsapp",
+            live_prompt_text=arguments.get("live_prompt_text") or current_prompt,
+            test_live_editor_prompt=bool(arguments.get("test_live_editor_prompt", True)),
+            _session_factory=session_factory,
+        )
+        pct = res.get("approval_pct", 0)
+        passed = res.get("passed_cases", 0)
+        total = res.get("total_cases", 0)
+        summary = f"Score: {pct}% ({passed}/{total} aprovados)"
+        return {"output": res, "badge": {"tool_name": tool_name, "label": label, "summary": summary}}
+
     return {
         "output": {"error": f"Tool '{tool_name}' desconhecida."},
         "badge": {"tool_name": tool_name, "label": label, "summary": "Tool não encontrada"},
     }
+
 

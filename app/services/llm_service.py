@@ -173,13 +173,25 @@ MODO DE OPERAÇÃO HÍBRIDO (CHAT CONVERSACIONAL À ESQUERDA + EDITOR EM TEMPO R
 - MODO 2 — EDIÇÃO EM TEMPO REAL DO PROMPT:
   Se o usuário pedir para criar, alterar, corrigir ou aplicar uma melhoria no prompt (ex: "Aplique isso no prompt", "Adicione a regra X", "Corrija com base na conversa da Arena"), execute rigorosamente as Fases 0 a 3B, defina `"prompt_modified": true`, coloque o texto completo atualizado em `"suggested_prompt"` (ele atualizará o editor à direita em tempo real) e explique o que foi feito em `"explanation"`.
 
-FERRAMENTAS DE CONTEXTO ON-DEMAND (MCP PROMPTOPS):
-Você possui acesso a 5 ferramentas especializadas que pode acionar SOB DEMANDA antes de gerar o JSON final:
+FERRAMENTAS DE CONTEXTO ON-DEMAND (MCP PROMPTOPS — 9 TOOLS COMPARTILHADAS COM ANTIGRAVITY):
+Você possui acesso a 9 ferramentas especializadas que pode acionar SOB DEMANDA antes de gerar o JSON final:
 1. `search_rag_prompt_blocks`: Use quando o usuário pedir exemplos/referências de outros prompts ou quando precisar consultar blocos modulares (<GlobalSettings>, <variaveis>, <persona>, <ferramentas_MCP>, <few_shot_declarado> ou Treinamento SDR) no RAG Parent-Child.
 2. `inspect_client_supabase_attendance`: Use quando o usuário citar um telefone/sessão (ex: +55...), execution_id ou pedir para diagnosticar a memória (n8n_chat_histories / Retell) e o uso de tools (workflow_step_executions) de um atendimento no Supabase do cliente.
-3. `get_arena_and_evals_context`: Use quando o usuário pedir para ler a conversa atual do teste A/B (Arena A/B) ou verificar falhas nos Evals.
+3. `get_arena_and_evals_context`: Use quando o usuário pedir para ler a conversa atual do teste A/B (Arena A/B) ou verificar falhas recentes nos Evals.
 4. `inspect_client_mcp_schemas`: Use quando precisar conferir os nomes e parâmetros exatos das tools MCP do cliente.
-5. `read_mindflow_engineering_docs`: Use quando precisar consultar o Livro-Razão de Hipóteses (T-01, H-04, H-03, H-01), a Anatomia Modular Canônica ou o Guia de Dados do Supabase.
+5. `read_mindflow_engineering_docs`: Use quando precisar consultar o Livro-Razão de Hipóteses (T-01, H-04, H-03, H-01), a Anatomia Modular Canônica ou o Guia de Dados do Supabase (sincronizado em tempo real com o Antigravity).
+6. `update_mindflow_engineering_doc`: Use quando você ou o usuário validarem/refutarem uma hipótese nos Evals ou decidirem atualizar a documentação compartilhada (`hypotheses_ledger`, `modular_prompt_anatomy`, `supabase_attendance_guide`).
+7. `list_prompt_eval_datasets`: Use para listar todos os casos de teste (Evals) cadastrados para o `prompt_id` e `channel` atuais.
+8. `manage_prompt_eval_case`: Use para CRIAR (`action='create'`), ATUALIZAR (`action='update'`) ou EXCLUIR (`action='delete'`) casos de teste (Evals) seguindo o rigor científico Popperiano.
+9. `run_prompt_eval_suite`: Use para EXECUTAR a bateria completa de Evals (LLM-as-a-Judge + Guardrails Determinísticos) contra a versão selecionada ou contra o texto atual do editor, obtendo o score real e o status do Quality Gate ($\ge 90\%$).
+
+REGRAS CIENTÍFICAS PARA CRIAÇÃO E EXECUÇÃO DE EVALS (MÉTODO POPPERIANO — IGUAL AO ANTIGRAVITY):
+Sempre que criar ou editar casos de teste com `manage_prompt_eval_case`:
+- **Rigor de Falseabilidade Popperiana**: Para testar uma regra ou hipótese de verdade, crie pelo menos **1 Caso de Refutação Adversarial (`is_refutation_case = true`)** — um cenário de borda/adversarial (ex: cliente tentando burlar restrição, pedindo horário fora da janela, omitindo variável obrigatória ou induzindo vazamento de ID) desenhado especificamente para tentar quebrar o prompt.
+- **Guardrails Determinísticos Anti-Contaminação (`expected_assertions`)**:
+  - Prompts **Tipo A (Atendimento em Produção)**: adicione `"forbidden_literal_ids": ["172025", "181629", "163951"]` (ou IDs que jamais devem ser chumbados/vazados) e `"max_questions_per_turn": 1`.
+  - Prompts **Tipo B (Templates / Blueprints Master)**: adicione `"forbidden_symbolic_placeholders": ["[INSERIR_ID]", "[SEU_ID_AQUI]"]`.
+- **Quality Gate ($\ge 90\%$)**: Uma versão só é aprovada no Quality Gate para promoção se atingir média $\ge 0.90$ (90%) na suíte completa e passar nos casos de refutação (`is_refutation_case = true`).
 
 BLOCO DE MEMÓRIA ATIVA CARREGADO:
 {memory_block}
@@ -203,7 +215,7 @@ Retorne APENAS um objeto JSON válido com a seguinte estrutura exata:
 {{
   "prompt_modified": true,
   "suggested_prompt": "texto completo do prompt corporativo gerado (ou o texto original inalterado se prompt_modified=false)",
-  "explanation": "resposta conversacional ao usuário no chat (diagnóstico da consulta ou resumo executivo das alterações aplicadas nas Fases 1, 2 e 3B)",
+  "explanation": "resposta conversacional ao usuário no chat (diagnóstico da consulta, casos de Eval criados/executados ou resumo executivo das alterações aplicadas nas Fases 1, 2 e 3B)",
   "audit_report": {{
     "status_geral": "aprovado",
     "rodada_atual": 1,
@@ -276,13 +288,14 @@ async def generate_prompt_meta_suggestion(
         "client_id": client_id,
         "channel": channel,
         "version_id": version_id,
+        "current_prompt": current_prompt,
         "arena_history": arena_history,
         "failing_examples": failing_examples,
     }
 
-    # Loop ReAct / Tool Calling On-Demand (até 3 rodadas de consulta a ferramentas caso necessário)
+    # Loop ReAct / Tool Calling On-Demand (até 4 rodadas de consulta/execução de ferramentas caso necessário)
     response = None
-    for round_idx in range(3):
+    for round_idx in range(4):
         response = await client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
