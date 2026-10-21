@@ -162,10 +162,18 @@ DEFAULT_CORPORATE_ACTIVE_MEMORY_XML = """<memoria_ativa versao="1.0" escopo="pro
 
 
 def build_corporate_generator_system_prompt(active_memory_xml: Optional[str] = None) -> str:
-    """Constrói o System Prompt do Gerador Corporativo com Autoaprendizado (Fases 0 a 3B)."""
+    """Constrói o System Prompt do Gerador Corporativo com Autoaprendizado (Fases 0 a 3B) e Tools On-Demand MCP."""
     memory_block = active_memory_xml or DEFAULT_CORPORATE_ACTIVE_MEMORY_XML
     return f"""Você opera a SKILL — GERADOR DE PROMPTS CORPORATIVOS COM AUTOAPRENDIZADO da MindFlow.
 ESCOPO EXCLUSIVO: Criar e alterar prompts de atendimento de clientes (os que ficam armazenados na tabela Prompts da base de dados: WhatsApp, Ligação/Voz, Follow-Up, Instagram). NUNCA confundir com prompts de código.
+
+FERRAMENTAS DE CONTEXTO ON-DEMAND (MCP PROMPTOPS):
+Você possui acesso a 5 ferramentas especializadas que pode acionar SOB DEMANDA antes de gerar o JSON final:
+1. `search_rag_prompt_blocks`: Use quando o usuário pedir exemplos/referências de outros prompts ou quando precisar consultar blocos modulares (<GlobalSettings>, <variaveis>, <persona>, <ferramentas_MCP>, <few_shot_declarado> ou Treinamento SDR) no RAG Parent-Child.
+2. `inspect_client_supabase_attendance`: Use quando o usuário citar um telefone/sessão (ex: +55...), execution_id ou pedir para diagnosticar a memória (n8n_chat_histories / Retell) e o uso de tools (workflow_step_executions) de um atendimento no Supabase do cliente.
+3. `get_arena_and_evals_context`: Use quando o usuário pedir para ler a conversa atual do teste A/B (Arena A/B) ou verificar falhas nos Evals.
+4. `inspect_client_mcp_schemas`: Use quando precisar conferir os nomes e parâmetros exatos das tools MCP do cliente.
+5. `read_mindflow_engineering_docs`: Use quando precisar consultar o Livro-Razão de Hipóteses (T-01, H-04, H-03, H-01), a Anatomia Modular Canônica ou o Guia de Dados do Supabase.
 
 BLOCO DE MEMÓRIA ATIVA CARREGADO:
 {memory_block}
@@ -188,7 +196,7 @@ Execute internamente de forma rigorosa todas as fases antes de produzir o JSON f
 Retorne APENAS um objeto JSON válido com a seguinte estrutura exata:
 {{
   "suggested_prompt": "texto completo do prompt corporativo gerado",
-  "explanation": "resumo executivo das decisões (Fase 1, Fase 2 e correções da Fase 3B)",
+  "explanation": "resumo executivo das decisões (Fase 1, Fase 2, ferramentas consultadas e correções da Fase 3B)",
   "audit_report": {{
     "status_geral": "aprovado",
     "rodada_atual": 1,
@@ -205,28 +213,107 @@ async def generate_prompt_meta_suggestion(
     current_prompt: str,
     instruction: str,
     failing_examples: Optional[List[Dict[str, Any]]] = None,
-    active_memory_xml: Optional[str] = None
+    active_memory_xml: Optional[str] = None,
+    prompt_id: Optional[int] = None,
+    client_id: Optional[str] = None,
+    channel: Optional[str] = "whatsapp",
+    version_id: Optional[Any] = None,
+    arena_history: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Agente Gerador de Prompt Corporativo: executa Fases 0 a 3B com memória ativa e gera diff unificado."""
+    """
+    Agente Gerador de Prompt Corporativo:
+    Opera com Tool Calling On-Demand (Context MCP: RAG Parent-Child, Supabase do Cliente, Arena A/B, Evals, Docs)
+    e executa Fases 0 a 3B com memória ativa e geração de diff unificado.
+    """
+    from app.services.context_mcp_service import (
+        get_generator_openai_tools,
+        execute_generator_tool_call,
+    )
+
     client = get_openai_client()
     effective_memory = active_memory_xml or DEFAULT_CORPORATE_ACTIVE_MEMORY_XML
     meta_system_prompt = build_corporate_generator_system_prompt(effective_memory)
 
-    user_content = f"### Prompt de Cliente Atual:\n{current_prompt}\n\n### Briefing / Instrução de Alteração:\n{instruction}"
+    has_arena_turns = bool(arena_history and (arena_history.get("A") or arena_history.get("B")))
+    context_hint = (
+        f"[Metadados da Sessão: prompt_id={prompt_id}, client_id={client_id}, "
+        f"channel={channel}, version_id={version_id}, arena_chat_disponivel={has_arena_turns}]"
+    )
+
+    user_content = (
+        f"{context_hint}\n\n"
+        f"### Prompt de Cliente Atual:\n{current_prompt}\n\n"
+        f"### Briefing / Instrução de Alteração:\n{instruction}"
+    )
     if failing_examples:
         user_content += f"\n\n### Exemplos de Falhas Ocorridas nos Evals:\n{json.dumps(failing_examples, ensure_ascii=False, indent=2)}"
 
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": meta_system_prompt},
-            {"role": "user", "content": user_content}
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.2
-    )
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": meta_system_prompt},
+        {"role": "user", "content": user_content},
+    ]
 
-    raw_json = json.loads(response.choices[0].message.content or "{}")
+    tools_schema = get_generator_openai_tools()
+    tools_consulted: List[Dict[str, str]] = []
+    tool_context = {
+        "prompt_id": prompt_id,
+        "client_id": client_id,
+        "channel": channel,
+        "version_id": version_id,
+        "arena_history": arena_history,
+        "failing_examples": failing_examples,
+    }
+
+    # Loop ReAct / Tool Calling On-Demand (até 3 rodadas de consulta a ferramentas caso necessário)
+    response = None
+    for round_idx in range(3):
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=tools_schema,
+            tool_choice="auto",
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        choice = response.choices[0]
+        tool_calls = getattr(choice.message, "tool_calls", None)
+        if not tool_calls:
+            break
+
+        messages.append(choice.message)
+        for tc in tool_calls:
+            t_name = tc.function.name
+            try:
+                t_args = json.loads(tc.function.arguments or "{}")
+            except Exception:
+                t_args = {}
+
+            exec_info = await execute_generator_tool_call(
+                tool_name=t_name,
+                arguments=t_args,
+                context=tool_context,
+            )
+            tools_consulted.append(exec_info["badge"])
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": json.dumps(exec_info["output"], ensure_ascii=False),
+            })
+    else:
+        # Chamada final sem tools caso tenha atingido o limite de rodadas de investigação
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+
+    raw_content = (response.choices[0].message.content if response else None) or "{}"
+    try:
+        raw_json = json.loads(raw_content)
+    except Exception:
+        raw_json = {}
+
     suggested = raw_json.get("suggested_prompt", current_prompt)
     explanation = raw_json.get("explanation", "Alterações aplicadas conforme Fases 0 a 3B.")
     audit_report = raw_json.get("audit_report", {
@@ -252,6 +339,7 @@ async def generate_prompt_meta_suggestion(
         "diff_unified": diff_unified,
         "explanation": explanation,
         "audit_report": audit_report,
-        "updated_active_memory_xml": updated_memory
+        "updated_active_memory_xml": updated_memory,
+        "tools_consulted": tools_consulted,
     }
 

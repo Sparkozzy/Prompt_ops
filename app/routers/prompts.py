@@ -194,6 +194,23 @@ async def publish_version_to_production(
     version.published_at = get_utc_now()
     await session.commit()
 
+    # Sincroniza atomicamente o RAG Parent-Child (substitui Parent anterior e expurga Children obsoletos via CASCADE)
+    try:
+        from app.services.rag_service import upsert_prompt_in_rag
+        await upsert_prompt_in_rag(
+            session=session,
+            prompt_id=int(version.prompt_id),
+            client_id=str(version.client_id),
+            client_name=version.client_name,
+            prompt_name=version.client_name,
+            channel=ch,
+            prompt_text=version.prompt_text,
+            version_label=version.version_label,
+            eval_score=version.eval_score,
+        )
+    except Exception as rag_err:
+        print(f"[Publish RAG Sync Warning] Falha ao atualizar RAG Parent-Child: {rag_err}")
+
     return PromptPublishResponse(
         success=True,
         message="Versão aprovada e publicada em produção no Supabase com sucesso!",

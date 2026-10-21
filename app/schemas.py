@@ -183,13 +183,24 @@ class PromptRollbackRequest(BaseModel):
 
 
 # ============================================================
-# Schemas: Agente Gerador de Prompt Corporativo (Autoaprendizado)
+# Schemas: Agente Gerador de Prompt Corporativo (Autoaprendizado + Context MCP)
 # ============================================================
+class GeneratorToolConsulted(BaseModel):
+    tool_name: str
+    label: str
+    summary: str
+
+
 class MetaGeneratorRequest(BaseModel):
     current_prompt: str
     instruction: str
     failing_examples: Optional[List[Dict[str, Any]]] = None
     active_memory_xml: Optional[str] = None
+    prompt_id: Optional[int] = None
+    client_id: Optional[str] = None
+    channel: Optional[str] = "whatsapp"
+    version_id: Optional[UUID] = None
+    arena_history: Optional[Dict[str, List[Dict[str, Any]]]] = None
 
 
 class MetaGeneratorResponse(BaseModel):
@@ -198,4 +209,5 @@ class MetaGeneratorResponse(BaseModel):
     explanation: str
     audit_report: Optional[Dict[str, Any]] = None
     updated_active_memory_xml: Optional[str] = None
+    tools_consulted: List[GeneratorToolConsulted] = Field(default_factory=list)
 

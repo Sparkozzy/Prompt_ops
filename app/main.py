@@ -36,6 +36,13 @@ app.include_router(arena.router, prefix="/api/v1")
 app.include_router(evals.router, prefix="/api/v1")
 app.include_router(generator.router, prefix="/api/v1")
 
+# Servidor MCP Nativo (SSE) de Contexto, RAG Parent-Child e Diagnóstico Multi-Tenant
+try:
+    from app.services.context_mcp_service import prompt_ops_mcp
+    app.mount("/mcp", prompt_ops_mcp.sse_app())
+except Exception as mcp_mount_err:
+    print(f"[PromptOps MCP Mount Warning] {mcp_mount_err}")
+
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Verificação de integridade do serviço."""

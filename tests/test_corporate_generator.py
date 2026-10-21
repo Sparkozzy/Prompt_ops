@@ -67,6 +67,7 @@ async def test_generate_prompt_meta_suggestion_executes_corporate_skill():
 
     mock_choice = MagicMock()
     mock_choice.message.content = json.dumps(mock_llm_payload)
+    mock_choice.message.tool_calls = None
     mock_resp = MagicMock()
     mock_resp.choices = [mock_choice]
 
