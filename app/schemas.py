@@ -211,6 +211,8 @@ class GeneratorToolConsulted(BaseModel):
     tool_name: str
     label: str
     summary: str
+    arguments: Optional[Dict[str, Any]] = None
+    output: Optional[Any] = None
 
 
 class MetaGeneratorRequest(BaseModel):

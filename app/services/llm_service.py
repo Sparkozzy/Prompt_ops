@@ -171,7 +171,12 @@ MODO DE OPERAÇÃO HÍBRIDO (CHAT CONVERSACIONAL À ESQUERDA + EDITOR EM TEMPO R
 - MODO 1 — CONSULTA / DIAGNÓSTICO (Sem alterar o prompt):
   Se a mensagem do usuário for apenas uma pergunta ou pedido de investigação (ex: "O que aconteceu no atendimento do número +55...?", "Quais tools MCP esse cliente tem?", "Como os outros prompts no RAG fazem agendamento?", "Por que a versão A foi pior na Arena?"), acione as tools MCP necessárias sob demanda, responda detalhadamente em `explanation`, defina `"prompt_modified": false` e retorne `"suggested_prompt"` idêntico ao prompt atual.
 - MODO 2 — EDIÇÃO EM TEMPO REAL DO PROMPT:
-  Se o usuário pedir para criar, alterar, corrigir ou aplicar uma melhoria no prompt (ex: "Aplique isso no prompt", "Adicione a regra X", "Corrija com base na conversa da Arena"), execute rigorosamente as Fases 0 a 3B, defina `"prompt_modified": true`, coloque o texto completo atualizado em `"suggested_prompt"` (ele atualizará o editor à direita em tempo real) e explique o que foi feito em `"explanation"`.
+  Se o usuário pedir para criar, alterar, corrigir ou aplicar uma melhoria no prompt (ex: "Aplique isso no prompt", "Adicione a regra X", "Corrija com base na conversa da Arena", "Melhore o agendamento"):
+  1. Execute rigorosamente as Fases 0 a 3A e gere o prompt completo atualizado em `suggested_prompt`.
+  2. REGRA MANDATÓRIA DE EVALS E CIÊNCIA POPPERIANA: Sempre que alterar o prompt, você DEVE OBRIGATORIAMENTE acionar as tools MCP de Evals antes de finalizar:
+     - Acione `manage_prompt_eval_case` (`action='create'`) para incluir pelo menos 1 Caso de Refutação Adversarial (`is_refutation_case=true`) e/ou caso de teste específico para validar se a melhoria foi corretamente aplicada e se não quebrou as regras.
+     - Em seguida, acione `run_prompt_eval_suite` (`test_live_editor_prompt=true`, `live_prompt_text=suggested_prompt`) para rodar os Evals em tempo real e aferir a aprovação contra o Quality Gate (>= 90%).
+  3. Defina `"prompt_modified": true`, coloque o texto atualizado em `"suggested_prompt"` (ele atualizará o editor à direita em tempo real), relate em `explanation` o que foi alterado, o caso de Eval criado e o resultado dos testes executados em tempo real.
 
 FERRAMENTAS DE CONTEXTO ON-DEMAND (MCP PROMPTOPS — 9 TOOLS COMPARTILHADAS COM ANTIGRAVITY):
 Você possui acesso a 9 ferramentas especializadas que pode acionar SOB DEMANDA antes de gerar o JSON final:
@@ -293,9 +298,9 @@ async def generate_prompt_meta_suggestion(
         "failing_examples": failing_examples,
     }
 
-    # Loop ReAct / Tool Calling On-Demand (até 4 rodadas de consulta/execução de ferramentas caso necessário)
+    # Loop ReAct / Tool Calling On-Demand (até 6 rodadas de consulta/execução de ferramentas caso necessário)
     response = None
-    for round_idx in range(4):
+    for round_idx in range(6):
         response = await client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
@@ -322,7 +327,10 @@ async def generate_prompt_meta_suggestion(
                 arguments=t_args,
                 context=tool_context,
             )
-            tools_consulted.append(exec_info["badge"])
+            b_info = dict(exec_info["badge"])
+            b_info["arguments"] = t_args
+            b_info["output"] = exec_info.get("output")
+            tools_consulted.append(b_info)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
