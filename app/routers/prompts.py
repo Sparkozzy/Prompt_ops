@@ -85,7 +85,25 @@ async def create_production_prompt(
     }
 
     supabase = get_production_supabase()
-    res = supabase.table("Prompts").insert(row_data).execute()
+
+    # Obtém o próximo ID para evitar colisão caso a sequence do PostgreSQL esteja desincronizada
+    try:
+        max_res = supabase.table("Prompts").select("id").order("id", desc=True).limit(1).execute()
+        next_id = (max_res.data[0]["id"] if max_res.data else 0) + 1
+        row_data["id"] = next_id
+    except Exception:
+        pass
+
+    try:
+        res = supabase.table("Prompts").insert(row_data).execute()
+    except Exception as e:
+        # Fallback sem ID explícito caso o banco recuse inserção com chave primária explícita
+        if "id" in row_data:
+            del row_data["id"]
+            res = supabase.table("Prompts").insert(row_data).execute()
+        else:
+            raise e
+
     if not res.data:
         raise HTTPException(status_code=500, detail="Erro ao inserir prompt no Supabase.")
 
