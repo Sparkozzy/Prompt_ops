@@ -5,7 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db_session, get_production_supabase
 from app.models import PromptVersion, get_utc_now
-from app.schemas import PromptVersionCreate, PromptVersionRead, PromptPublishRequest, PromptPublishResponse, PromptRollbackRequest
+from app.schemas import (
+    PromptVersionCreate,
+    PromptVersionRead,
+    PromptPublishRequest,
+    PromptPublishResponse,
+    PromptRollbackRequest,
+    PromptCreateRequest,
+    PromptCreateResponse,
+)
 
 router = APIRouter(prefix="/prompts", tags=["Prompts"])
 
@@ -43,6 +51,104 @@ async def list_production_prompts():
             "has_insta": "instagram" in channels
         })
     return items
+
+@router.post("/production", status_code=201)
+async def create_production_prompt(
+    payload: PromptCreateRequest,
+    session: AsyncSession = Depends(get_db_session)
+):
+    """
+    Cria uma nova linha de prompt no Supabase oficial e registra a versão inicial no banco dedicado.
+    Mapeia o canal para a coluna correta (WhatsApp -> Prompt_Text, Ligação -> Ligação/txt, FUP -> prompt_fup, Insta -> Prompt Insta).
+    """
+    client_name = (payload.client_name or "").strip()
+    if not client_name:
+        raise HTTPException(status_code=400, detail="Nome do cliente é obrigatório.")
+
+    channel = (payload.channel or "whatsapp").lower().strip()
+    col_mapping = {
+        "whatsapp": "Prompt_Text",
+        "ligacao": "Ligação/txt",
+        "fup": "prompt_fup",
+        "instagram": "Prompt Insta"
+    }
+    target_col = col_mapping.get(channel, "Prompt_Text")
+
+    prompt_body = payload.prompt_text or ""
+    row_data = {
+        "Nome do cliente": client_name,
+        "Pormpt_Name": payload.prompt_name or "atendimento_geral",
+        "Prompt_Text": prompt_body if target_col == "Prompt_Text" else None,
+        "Ligação/txt": prompt_body if target_col == "Ligação/txt" else None,
+        "prompt_fup": prompt_body if target_col == "prompt_fup" else None,
+        "Prompt Insta": prompt_body if target_col == "Prompt Insta" else None,
+    }
+
+    supabase = get_production_supabase()
+    res = supabase.table("Prompts").insert(row_data).execute()
+    if not res.data:
+        raise HTTPException(status_code=500, detail="Erro ao inserir prompt no Supabase.")
+
+    created = res.data[0]
+    p_id = created["id"]
+
+    # Se client_id fornecido, associa na tabela client_configurations
+    if payload.client_id:
+        try:
+            supabase.table("client_configurations").update({
+                "prompt_id": p_id
+            }).eq("client_id", str(payload.client_id)).execute()
+        except Exception:
+            pass
+
+    # Cria snapshot de versão inicial no banco de dados dedicado do PromptOps
+    try:
+        initial_version = PromptVersion(
+            prompt_id=p_id,
+            client_id=str(payload.client_id or p_id),
+            client_name=client_name,
+            channel=channel,
+            version_label=f"prod-{channel}-1",
+            prompt_text=prompt_body,
+            model_name="gpt-4.1",
+            temperature=0.7,
+            commit_message="Versão inicial de criação",
+            author_email=payload.author_email or "admin@mindflow.ai",
+            status="published",
+            created_at=get_utc_now(),
+            updated_at=get_utc_now(),
+            published_at=get_utc_now()
+        )
+        session.add(initial_version)
+        await session.commit()
+    except Exception:
+        pass
+
+    # Sincroniza RAG se houver texto inicial
+    if prompt_body.strip():
+        try:
+            from app.services.rag_service import upsert_prompt_in_rag
+            await upsert_prompt_in_rag(
+                db=session,
+                prompt_id=p_id,
+                client_id=str(payload.client_id or p_id),
+                client_name=client_name,
+                channel=channel,
+                prompt_text=prompt_body
+            )
+        except Exception:
+            pass
+
+    channels = [channel]
+    return {
+        "id": p_id,
+        "created_at": created.get("created_at"),
+        "Nome do cliente": created.get("Nome do cliente"),
+        "Pormpt_Name": created.get("Pormpt_Name"),
+        "channel": channel,
+        "Prompt_Text": prompt_body,
+        "channels": channels
+    }
 
 @router.get("/production/{prompt_id}")
 async def get_production_prompt(prompt_id: int, channel: str = Query("whatsapp")):

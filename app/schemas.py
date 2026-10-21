@@ -23,6 +23,28 @@ class PromptVersionCreate(PromptVersionBase):
     author_email: str
 
 
+class PromptCreateRequest(BaseModel):
+    client_name: str
+    prompt_name: Optional[str] = "atendimento_geral"
+    channel: str = "whatsapp"
+    prompt_text: Optional[str] = ""
+    author_email: Optional[str] = "admin@mindflow.ai"
+    client_id: Optional[str] = None
+
+
+class PromptCreateResponse(BaseModel):
+    id: int
+    created_at: Optional[str] = None
+    client_name: str = Field(..., alias="Nome do cliente")
+    prompt_name: Optional[str] = Field(None, alias="Pormpt_Name")
+    channel: str
+    prompt_text: str = Field(..., alias="Prompt_Text")
+    channels: List[str] = Field(default_factory=list)
+
+    class Config:
+        populate_by_name = True
+
+
 class PromptVersionRead(PromptVersionBase):
     id: UUID
     status: str
