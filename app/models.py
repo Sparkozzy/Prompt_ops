@@ -190,3 +190,20 @@ class RagChildChunk(Base):
     created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
 
     parent = relationship("RagParentPrompt", back_populates="children")
+
+
+class PromptEngineeringDoc(Base):
+    """
+    Fonte Única da Verdade (Single Source of Truth) para documentos vivos de Engenharia de Prompts
+    e Hipóteses Científicas compartilhados em tempo real entre o Agente Antigravity e o Agente PromptOps.
+    """
+    __tablename__ = "prompt_engineering_docs"
+
+    doc_key = Column(String(100), primary_key=True)  # prompt_hypotheses_ledger, active_memory_xml, canonical_prompt_anatomy, supabase_data_guide
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    version = Column(Integer, default=1, nullable=False)
+    updated_by = Column(String(255), default="system_seed", nullable=False)
+    change_summary = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now, nullable=False)
+

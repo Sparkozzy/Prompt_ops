@@ -6,7 +6,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.orm import selectinload
 from supabase import create_client
 from app.database import async_session_maker, get_production_supabase
-from app.models import EvalRun, EvalCaseResult, ToolExecutionLog
+from app.models import EvalRun, EvalCaseResult, ToolExecutionLog, PromptEngineeringDoc
 from app.services.rag_service import search_rag_chunks
 from app.services.mcp_service import get_client_mcp_urls, get_client_tools_and_map
 
@@ -14,24 +14,63 @@ from app.services.mcp_service import get_client_mcp_urls, get_client_tools_and_m
 prompt_ops_mcp = FastMCP(
     "prompt_ops_context_mcp",
     instructions=(
-        "Servidor MCP oficial de Contexto, RAG Parent-Child e Diagnóstico Multi-Tenant da MindFlow (PromptOps). "
-        "Utilize estas ferramentas SOB DEMANDA (on-demand) sempre que precisar consultar: "
+        "Servidor MCP oficial de Contexto, RAG Parent-Child, Sincronização de Hipóteses e Diagnóstico Multi-Tenant da MindFlow (PromptOps). "
+        "Compartilhado em tempo real entre o Agente Antigravity (IDE) e o Agente Copilot do PromptOps (Web UI). "
+        "Utilize estas ferramentas SOB DEMANDA (on-demand) sempre que precisar consultar ou atualizar: "
         "(1) Exemplos e blocos modulares de outros prompts de clientes ativos ou de Treinamento SDR no RAG Parent-Child; "
         "(2) Memória conversacional (n8n_chat_histories / Retell) e rastreio de execução de tools (workflow_step_executions) "
         "de um atendimento específico no Supabase isolado do cliente; "
         "(3) A conversa atual que está ocorrendo na Arena A/B ou falhas recentes nos Evals; "
         "(4) Os schemas exatos das ferramentas MCP habilitadas para o cliente; "
-        "(5) Documentação oficial de Engenharia de Prompts (Livro-Razão de Hipóteses T-01/H-04/H-03/H-01 e Guia Supabase)."
+        "(5) Ler ou atualizar a Documentação Viva de Engenharia de Prompts (Livro-Razão de Hipóteses prompt_hypotheses_ledger, "
+        "Memória Ativa active_memory_xml, Anatomia Canônica e Guia Supabase)."
     ),
 )
 
 
+ENGINEERING_DOCS_TITLES: Dict[str, str] = {
+    "prompt_hypotheses_ledger": "Livro-Razão de Hipóteses Científicas de Prompts (Prompt Hypotheses Ledger)",
+    "active_memory_xml": "Memória Ativa do Compilador de Prompts Corporativos (active_memory.xml)",
+    "canonical_prompt_anatomy": "Anatomia Modular Canônica do Prompt (5 Blocos Ortogonais)",
+    "supabase_data_guide": "Guia de Estrutura de Dados Multi-Tenant (Supabase Master & Cliente)",
+}
+
 ENGINEERING_DOCS_LIBRARY: Dict[str, str] = {
-    "prompt_hypotheses_ledger": """# Livro-Razão Científico de Hipóteses (Prompt Science — MindFlow)
-- **Teoria Consolidada T-01 (8 pts — OBRIGATÓRIA):** Isolamento de Estado por Variáveis Simbólicas `[var]` + Few-Shot Estruturado com Chain of Draft (`<raciocinio_interno_cod>`). Todo prompt que aciona ferramentas MCP deve declarar `<variaveis>` com ponteiros simbólicos (`[singleUserId]`, `[singleAccountId]`, `[unitId]`, `[selectedArea]`, etc.) e NUNCA usar IDs literais de casos antigos nos exemplos.
-- **Hipótese H-04 (+3 pts — Recomendada para Situator/Kravi):** Protocolo de Preenchimento por Contraste Sintático (`@` vs `null`). Em APIs que rejeitam `null` ou string vazia, instruir explicitamente o uso de `"@"` para campos não aplicáveis.
-- **Hipótese H-03 (+1 pt — Guardrail Anti-Contaminação Tipo B):** Re-hidratação Silenciosa de Estado. Se o histórico não contiver o ID numérico resolvido, é proibido enviar o nome literal do placeholder (`"singleAccountId"`) para a tool; o agente deve disparar silenciosamente a tool de identificação (`getUserByPhone`) primeiro.
-- **Hipótese BANIDA H-01 (-4 pts — ❌ X REFUTADA):** Few-Shot com IDs Literais de Casos Antigos (ex: `1277`, `275983`, `15799`). Causa Contaminação Tipo A (vazamento cruzado entre clientes). Terminantemente proibido.""",
+    "prompt_hypotheses_ledger": """# Livro-Razão de Hipóteses Científicas de Prompts (Prompt Hypotheses Ledger)
+
+> **Documento Oficial Sincronizado (Antigravity <-> PromptOps):** Livro-Razão Vivo de Hipóteses, Teorias e Experimentos de Engenharia de Prompts da MindFlow.
+
+## 1. Regras de Pontuação (Método Hipotético-Dedutivo de Karl Popper)
+- **Nascimento:** Toda nova hipótese inicia com `0 pontos` (Tese + Proposição + Requisito de Refutação).
+- **Aprovação em Teste de Refutação (`+1 ponto`):** Ganha `+1 ponto` a cada caso novo de refutação superado com sucesso.
+- **Erro em Teste de Refutação (`-2 pontos`):** Perde `-2 pontos` a cada falha (penalidade assimétrica 2:1).
+- **Promoção a Teoria (`>= 8 pontos`):** Promovida a `🏆 TEORIA CONSOLIDADA` ao atingir 8 pontos e Quality Gate `> 90%` no PromptOps.
+- **Morte Científica (`<= -4 pontos`):** Declarada `❌ REFUTADA`, banida permanentemente de todos os prompts.
+- **Regra dos 7 Pontos:** Se uma Teoria falhar em produção/novo Eval, comunicar ao usuário e reduzir a Hipótese com `7 pontos`.
+
+## 2. Teorias Consolidadas (`>= 8 pontos` — Prioridade Máxima)
+- **`T-01` (`8 pontos` — 🏆 TEORIA CONSOLIDADA):** Isolamento de Estado por Variáveis Simbólicas (`<variaveis>`) + Few-Shot Estrutural com CoD (`<raciocinio_interno_cod>`). Todo prompt que aciona ferramentas MCP deve declarar `<variaveis>` com ponteiros simbólicos (`[singleUserId]`, `[singleAccountId]`, `[unitId]`, `[selectedArea]`, etc.) e jamais usar IDs numéricos literais de casos antigos nos exemplos.
+
+## 3. Ranking de Hipóteses em Teste
+- **1º `H-04` (`+3 pts` — 🧪 Em Teste):** Explicitação de Protocolo de API por Contraste Sintático (`@` vs `null`/`""`). Proíbe `null`, `None`, `undefined` e `""` em APIs restritivas (ex: Situator) e instrui uso de `'@'` para campos não aplicáveis.
+- **2º `H-03` (`+1 pt` — 🧪 Em Teste):** Guardrail de Re-hidratação Silenciosa de Estado. Proíbe envio do nome textual da variável simbólica (ex: `"singleAccountId"`) para a tool se ela estiver vazia, forçando execução prévia silenciosa de `getUserByPhone`.
+- **3º `H-08` (`+1 pt` — 🧪 Em Teste):** Disparo Amplo de MCP Tool (`send_whatsapp_message`) em qualquer sinal de interesse pós-valores em chamadas de voz.
+
+## 4. Hipóteses Refutadas (`<= -4 pontos` — Proibição Permanente)
+- **`H-01` (`-4 pontos` — ❌ X REFUTADA):** Few-Shot com Valores Literais de Casos Antigos (ex: `1277`, `275983`, `15799`). Causa Contaminação Tipo A (Cross-Tenant Data Leakage por anchoring bias). Substituída por `T-01`.""",
+    "active_memory_xml": """<memoria_ativa versao="1.0" escopo="prompts_de_clientes_tabela_prompts">
+  <regras_de_geracao>
+    <regra tipo="IMUTAVEL" id="R001">Todo prompt de cliente deve declarar explicitamente persona, contexto, formato de output e critério de encerramento.</regra>
+    <regra tipo="IMUTAVEL" id="R002">Estrutura de output sempre em XML ou Markdown conforme padrão da empresa. Nunca misturar os dois no mesmo bloco.</regra>
+    <regra tipo="IMUTAVEL" id="R003_T01" origem="docs/prompt_hypotheses_ledger.md#T-01">Isolamento de Estado por Variáveis Simbólicas: Todo prompt de cliente que acione ferramentas MCP deve declarar um bloco &lt;variaveis&gt; com ponteiros simbólicos entre colchetes (ex: [singleUserId], [singleAccountId], [unitId]) e jamais conter IDs numéricos literais de casos antigos nos exemplos ou regras.</regra>
+    <regra tipo="MUTAVEL" id="R004_H04" ultima_atualizacao="2026-10-21">Em integrações com APIs que rejeitam null/vazio (ex: Situator), explicitar por contraste sintático o uso de '@' para campos não aplicáveis em vez de null, None ou "".</regra>
+    <regra tipo="MUTAVEL" id="R005_H03" ultima_atualizacao="2026-10-21">Guardrail de Re-hidratação Silenciosa: Proibir o envio do nome literal da variável simbólica (ex: "singleAccountId") para a tool se o valor numérico não constar no histórico da sessão, forçando a execução prévia da tool de identificação (getUserByPhone).</regra>
+  </regras_de_geracao>
+  <erros_registrados>
+    <erro id="E001" status="aberto" data="2026-10-20" ref_hipotese="H-01">Inserir exemplos reais de casos antigos com IDs literais (Contaminação Tipo A).</erro>
+    <erro id="E002" status="aberto" data="2026-10-20" ref_hipotese="REF-01">Enviar o nome textual do placeholder ("singleAccountId") como argumento da tool quando o histórico está truncado (Contaminação Tipo B).</erro>
+  </erros_registrados>
+</memoria_ativa>""",
     "canonical_prompt_anatomy": """# Anatomia Modular Canônica do Prompt (5 Blocos Ortogonais)
 1. `<GlobalSettings>`: Timezone (`America/Sao_Paulo` UTC-3), idioma, modo de raciocínio interno (`Chain of Draft - CoD`).
 2. `<variaveis>`: Declaração tipada de ponteiros de sessão simbólicos (`[singleUserId]`, `[singleAccountId]`, `[customer_name]`). Zero números literais fixos.
@@ -301,15 +340,130 @@ async def inspect_client_mcp_schemas_impl(
     }
 
 
-def read_mindflow_engineering_docs_impl(topic: str = "all") -> Dict[str, Any]:
-    """Retorna a documentação oficial de Engenharia de Prompts e Estrutura de Dados da MindFlow."""
+async def _ensure_engineering_docs_seeded(session) -> None:
+    """Garante que os documentos base existam na tabela prompt_engineering_docs."""
+    res = await session.execute(select(PromptEngineeringDoc))
+    existing = {row.doc_key: row for row in res.scalars().all()}
+    changed = False
+    for k, default_text in ENGINEERING_DOCS_LIBRARY.items():
+        if k not in existing:
+            doc = PromptEngineeringDoc(
+                doc_key=k,
+                title=ENGINEERING_DOCS_TITLES.get(k, k),
+                content=default_text,
+                version=1,
+                updated_by="system_seed",
+                change_summary="Seed inicial da documentação compartilhada Antigravity <-> PromptOps",
+            )
+            session.add(doc)
+            changed = True
+    if changed:
+        await session.commit()
+
+
+async def read_mindflow_engineering_docs_impl(
+    topic: str = "all",
+    _session_factory: Any = None,
+) -> Dict[str, Any]:
+    """
+    Retorna a documentação oficial viva de Engenharia de Prompts e Hipóteses da MindFlow
+    persistida na tabela compartilhada prompt_engineering_docs (com fallback em memória).
+    """
     t = (topic or "all").strip().lower()
-    if t in ENGINEERING_DOCS_LIBRARY:
-        return {"topic": t, "content": ENGINEERING_DOCS_LIBRARY[t]}
-    return {
-        "topic": "all",
-        "documents": ENGINEERING_DOCS_LIBRARY,
-    }
+    factory = _session_factory or async_session_maker
+    try:
+        async with factory() as session:
+            await _ensure_engineering_docs_seeded(session)
+            if t != "all":
+                res = await session.execute(
+                    select(PromptEngineeringDoc).where(PromptEngineeringDoc.doc_key == t)
+                )
+                doc = res.scalar_one_or_none()
+                if doc:
+                    return {
+                        "topic": doc.doc_key,
+                        "title": doc.title,
+                        "content": doc.content,
+                        "version": doc.version,
+                        "updated_by": doc.updated_by,
+                        "change_summary": doc.change_summary,
+                        "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+                    }
+            res_all = await session.execute(select(PromptEngineeringDoc))
+            docs_all = res_all.scalars().all()
+            return {
+                "topic": "all",
+                "documents": {
+                    d.doc_key: {
+                        "title": d.title,
+                        "content": d.content,
+                        "version": d.version,
+                        "updated_by": d.updated_by,
+                        "change_summary": d.change_summary,
+                        "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+                    }
+                    for d in docs_all
+                },
+            }
+    except Exception as e:
+        print(f"[Context MCP Warning] Fallback in-memory para read_mindflow_engineering_docs: {e}")
+        if t in ENGINEERING_DOCS_LIBRARY:
+            return {"topic": t, "content": ENGINEERING_DOCS_LIBRARY[t], "version": 1, "updated_by": "fallback"}
+        return {"topic": "all", "documents": ENGINEERING_DOCS_LIBRARY}
+
+
+async def update_mindflow_engineering_doc_impl(
+    doc_key: str,
+    content: str,
+    updated_by: str = "prompt_ops_copilot",
+    change_summary: str = "Atualização via agente",
+    title: Optional[str] = None,
+    _session_factory: Any = None,
+) -> Dict[str, Any]:
+    """
+    Atualiza de forma transacional e versionada um documento de engenharia/hipóteses
+    compartilhado entre o Agente Antigravity e o Agente Copilot do PromptOps.
+    """
+    key = (doc_key or "").strip().lower()
+    if not key:
+        raise ValueError("doc_key é obrigatório.")
+    factory = _session_factory or async_session_maker
+    async with factory() as session:
+        await _ensure_engineering_docs_seeded(session)
+        res = await session.execute(
+            select(PromptEngineeringDoc).where(PromptEngineeringDoc.doc_key == key)
+        )
+        doc = res.scalar_one_or_none()
+        if doc:
+            doc.content = content
+            doc.version = (doc.version or 1) + 1
+            doc.updated_by = updated_by
+            doc.change_summary = change_summary
+            if title:
+                doc.title = title
+        else:
+            doc = PromptEngineeringDoc(
+                doc_key=key,
+                title=title or ENGINEERING_DOCS_TITLES.get(key, key),
+                content=content,
+                version=1,
+                updated_by=updated_by,
+                change_summary=change_summary,
+            )
+            session.add(doc)
+        await session.commit()
+        await session.refresh(doc)
+        # Mantém cache em memória sincronizado
+        ENGINEERING_DOCS_LIBRARY[key] = doc.content
+        return {
+            "doc_key": doc.doc_key,
+            "title": doc.title,
+            "content": doc.content,
+            "version": doc.version,
+            "updated_by": doc.updated_by,
+            "change_summary": doc.change_summary,
+            "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+        }
 
 
 # ============================================================================
@@ -421,12 +575,36 @@ async def mcp_inspect_client_mcp_schemas(
     description=(
         "QUANDO USAR: Sempre que precisar consultar as regras científicas detalhadas do Livro-Razão de Hipóteses "
         "(Teoria T-01 de Variáveis Simbólicas, H-04 protocolo '@', H-03 Re-hidratação Silenciosa, H-01 banida), "
-        "a Anatomia Modular Canônica de 5 blocos ortogonais ou o Guia de Tabelas do Supabase. "
-        "COMO USAR: Passe topic='prompt_hypotheses_ledger', 'canonical_prompt_anatomy', 'supabase_data_guide' ou 'all'."
+        "a Memória Ativa (<memoria_ativa>), a Anatomia Modular Canônica de 5 blocos ortogonais ou o Guia de Tabelas do Supabase. "
+        "COMO USAR: Passe topic='prompt_hypotheses_ledger', 'active_memory_xml', 'canonical_prompt_anatomy', 'supabase_data_guide' ou 'all'."
     ),
 )
 async def mcp_read_mindflow_engineering_docs(topic: str = "all") -> str:
-    res = read_mindflow_engineering_docs_impl(topic=topic)
+    res = await read_mindflow_engineering_docs_impl(topic=topic)
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
+
+@prompt_ops_mcp.tool(
+    name="update_mindflow_engineering_doc",
+    description=(
+        "QUANDO USAR: Sempre que uma nova hipótese científica for criada/testada/pontuada/refutada no Livro-Razão "
+        "(doc_key='prompt_hypotheses_ledger') ou uma nova regra/erro for adicionado à memória ativa (doc_key='active_memory_xml'). "
+        "Qualquer atualização feita aqui fica imediatamente visível tanto para o Agente do Antigravity quanto para o Agente do PromptOps. "
+        "COMO USAR: Informe 'doc_key', 'content' (texto completo atualizado do documento), 'updated_by' e 'change_summary'."
+    ),
+)
+async def mcp_update_mindflow_engineering_doc(
+    doc_key: str,
+    content: str,
+    updated_by: str = "mcp_agent",
+    change_summary: str = "Atualização sincronizada via MCP",
+) -> str:
+    res = await update_mindflow_engineering_doc_impl(
+        doc_key=doc_key,
+        content=content,
+        updated_by=updated_by,
+        change_summary=change_summary,
+    )
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 
@@ -553,19 +731,51 @@ def get_generator_openai_tools() -> List[Dict[str, Any]]:
             "function": {
                 "name": "read_mindflow_engineering_docs",
                 "description": (
-                    "QUANDO USAR: Acione sob demanda quando precisar consultar detalhes do Livro-Razão de Hipóteses "
-                    "(T-01, H-04, H-03, H-01), a Anatomia Modular Canônica de 5 blocos ou o Guia de Dados do Supabase da MindFlow. "
-                    "COMO USAR: Informe topic='prompt_hypotheses_ledger', 'canonical_prompt_anatomy', 'supabase_data_guide' ou 'all'."
+                    "QUANDO USAR: Acione sob demanda quando precisar consultar detalhes sincronizados do Livro-Razão de Hipóteses "
+                    "(T-01, H-04, H-03, H-01 e novas hipóteses gravadas pelo Antigravity), Memória Ativa (<memoria_ativa>), "
+                    "Anatomia Modular Canônica de 5 blocos ou Guia de Dados do Supabase da MindFlow. "
+                    "COMO USAR: Informe topic='prompt_hypotheses_ledger', 'active_memory_xml', 'canonical_prompt_anatomy', 'supabase_data_guide' ou 'all'."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "topic": {
                             "type": "string",
-                            "enum": ["all", "prompt_hypotheses_ledger", "canonical_prompt_anatomy", "supabase_data_guide"],
+                            "enum": ["all", "prompt_hypotheses_ledger", "active_memory_xml", "canonical_prompt_anatomy", "supabase_data_guide"],
                             "description": "Documento técnico a ser consultado.",
                         }
                     },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "update_mindflow_engineering_doc",
+                "description": (
+                    "QUANDO USAR: Acione quando o usuário pedir para registrar, atualizar ou pontuar uma hipótese científica "
+                    "no Livro-Razão (doc_key='prompt_hypotheses_ledger') ou atualizar uma regra/erro na memória ativa "
+                    "(doc_key='active_memory_xml') para que fique sincronizado com o Agente do Antigravity. "
+                    "Importante: Leia antes com read_mindflow_engineering_docs para preservar o conteúdo existente ao adicionar itens."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "doc_key": {
+                            "type": "string",
+                            "enum": ["prompt_hypotheses_ledger", "active_memory_xml", "canonical_prompt_anatomy", "supabase_data_guide"],
+                            "description": "Chave do documento compartilhado a ser atualizado.",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Conteúdo completo atualizado do documento.",
+                        },
+                        "change_summary": {
+                            "type": "string",
+                            "description": "Resumo curto do que foi adicionado/alterado.",
+                        },
+                    },
+                    "required": ["doc_key", "content", "change_summary"],
                 },
             },
         },
@@ -578,6 +788,7 @@ TOOL_BADGE_LABELS: Dict[str, str] = {
     "get_arena_and_evals_context": "🔍 Consultou Conversa Arena A/B & Evals",
     "inspect_client_mcp_schemas": "🛠️ Inspecionou Schemas MCP do Cliente",
     "read_mindflow_engineering_docs": "📖 Consultou Docs de Engenharia & Hipóteses",
+    "update_mindflow_engineering_doc": "✍️ Atualizou Doc de Hipóteses/Memória Compartilhada",
 }
 
 
@@ -596,6 +807,7 @@ async def execute_generator_tool_call(
     version_id = context.get("version_id")
     arena_history = context.get("arena_history")
     failing_examples = context.get("failing_examples")
+    session_factory = context.get("_session_factory")
 
     label = TOOL_BADGE_LABELS.get(tool_name, f"⚡ Tool: {tool_name}")
 
@@ -649,11 +861,26 @@ async def execute_generator_tool_call(
 
     if tool_name == "read_mindflow_engineering_docs":
         topic = arguments.get("topic", "all")
-        res = read_mindflow_engineering_docs_impl(topic=topic)
-        summary = f"Tópico consultado: {topic}"
+        res = await read_mindflow_engineering_docs_impl(topic=topic, _session_factory=session_factory)
+        summary = f"Tópico consultado: {topic} (v{res.get('version', 1)})"
+        return {"output": res, "badge": {"tool_name": tool_name, "label": label, "summary": summary}}
+
+    if tool_name == "update_mindflow_engineering_doc":
+        doc_key = arguments.get("doc_key", "prompt_hypotheses_ledger")
+        content = arguments.get("content", "")
+        change_summary = arguments.get("change_summary", "Atualizado pelo Agente Copilot")
+        res = await update_mindflow_engineering_doc_impl(
+            doc_key=doc_key,
+            content=content,
+            updated_by="prompt_ops_copilot",
+            change_summary=change_summary,
+            _session_factory=session_factory,
+        )
+        summary = f"{doc_key} atualizado para v{res.get('version', 1)}"
         return {"output": res, "badge": {"tool_name": tool_name, "label": label, "summary": summary}}
 
     return {
         "output": {"error": f"Tool '{tool_name}' desconhecida."},
         "badge": {"tool_name": tool_name, "label": label, "summary": "Tool não encontrada"},
     }
+
