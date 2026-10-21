@@ -279,7 +279,10 @@ async def generate_prompt_meta_suggestion(
     user_content = (
         f"{context_hint}\n\n"
         f"### Prompt Atual no Editor Lateral (em tempo real):\n{current_prompt}\n\n"
-        f"### Mensagem / Instrução do Usuário no Chat:\n{instruction}"
+        f"### Mensagem / Instrução do Usuário no Chat:\n{instruction}\n\n"
+        f"LEMBRETE MANDATÓRIO DE PIPELINE (PROMPTOPS): Se a sua resposta modificar ou refinar o prompt, você DEVE "
+        f"obrigatoriamente chamar a ferramenta `manage_prompt_eval_case` (para registrar um caso de teste/refutação adversarial validando a alteração) "
+        f"e em seguida `run_prompt_eval_suite` (para testar o prompt em tempo real e aferir o Quality Gate >= 90%) antes de gerar a resposta final."
     )
     if failing_examples:
         user_content += f"\n\n### Exemplos de Falhas Ocorridas nos Evals:\n{json.dumps(failing_examples, ensure_ascii=False, indent=2)}"
