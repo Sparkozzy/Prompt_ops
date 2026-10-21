@@ -32,6 +32,7 @@ async def on_startup():
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS is_refutation_case BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS forbidden_literal_ids JSONB DEFAULT '[]'::jsonb;"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS forbidden_symbolic_placeholders JSONB DEFAULT '[]'::jsonb;"))
