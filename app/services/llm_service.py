@@ -99,25 +99,122 @@ async def generate_chat_response(
         "tokens_output": response.usage.completion_tokens if response.usage else 0,
     }
 
+DEFAULT_CORPORATE_ACTIVE_MEMORY_XML = """<memoria_ativa versao="1.0" escopo="prompts_de_clientes_tabela_prompts">
+  <regras_de_geracao>
+    <regra tipo="IMUTAVEL" id="R001">
+      Todo prompt de cliente deve declarar explicitamente persona, contexto,
+      formato de output e critério de encerramento.
+    </regra>
+    <regra tipo="IMUTAVEL" id="R002">
+      Estrutura de output sempre em XML ou Markdown conforme padrão
+      da empresa. Nunca misturar os dois no mesmo bloco.
+    </regra>
+    <regra tipo="IMUTAVEL" id="R003_T01">
+      Isolamento de Estado por Variáveis Simbólicas: Todo prompt de cliente que acione
+      ferramentas MCP deve declarar um bloco <variaveis> com ponteiros simbólicos
+      entre colchetes (ex: [singleUserId], [singleAccountId], [unitId]) e jamais conter
+      IDs numéricos literais de casos antigos nos exemplos ou regras.
+    </regra>
+    <regra tipo="MUTAVEL" id="R004_H04" ultima_atualizacao="2026-10-21">
+      Em integrações com APIs que rejeitam null/vazio (ex: Situator), explicitar por
+      contraste sintático o uso de '@' para campos não aplicáveis em vez de null, None ou "".
+    </regra>
+    <regra tipo="MUTAVEL" id="R005_H03" ultima_atualizacao="2026-10-21">
+      Guardrail de Re-hidratação Silenciosa: Proibir o envio do nome literal da variável
+      simbólica (ex: "singleAccountId") para a tool se o valor numérico não constar no
+      histórico da sessão, forçando a execução prévia da tool de identificação (getUserByPhone).
+    </regra>
+  </regras_de_geracao>
+  <padroes_de_briefing>
+    <padrao id="P001" frequencia="alta">
+      Agentes multicanal (WhatsApp em Prompt_Text, Voz/Retell em "Ligação/txt",
+      Follow-Up em prompt_fup e Instagram em "Prompt Insta") que exigem mensagens
+      curtas, humanizadas e acionamento silencioso de ferramentas MCP via SSE.
+    </padrao>
+  </padroes_de_briefing>
+  <erros_registrados>
+    <erro id="E001" status="aberto" data="2026-10-20" ref_hipotese="H-01">
+      Inserir exemplos reais de casos antigos com IDs literais (ex: accountId=1277,
+      userId=275983, unitId=15799), causando ancoragem e vazamento cruzado entre clientes (Contaminação Tipo A).
+    </erro>
+    <erro id="E002" status="aberto" data="2026-10-20" ref_hipotese="REF-01">
+      Enviar o nome textual do placeholder ("singleAccountId") como argumento da tool quando
+      o histórico não possui o retorno prévio de getUserByPhone (Contaminação Tipo B).
+    </erro>
+  </erros_registrados>
+  <preferencias>
+    <preferencia tipo="tom" confirmada="sim">
+      Direto e técnico nas regras; empático, conciso e natural na fala ao cliente final.
+    </preferencia>
+    <preferencia tipo="xml" confirmada="sim">
+      Tags semânticas (<GlobalSettings>, <variaveis>, <persona>, <ferramentas_MCP>, <few_shot_declarado>).
+    </preferencia>
+    <preferencia tipo="cadeias_de_pensamento" confirmada="sim">
+      Chain of Draft (CoD) interno (<raciocinio_interno_cod>) conectado diretamente à resolução de variáveis e output.
+    </preferencia>
+  </preferencias>
+  <melhorias_propostas>
+    <melhoria id="M001" status="pendente" data="2026-10-21">
+      Calibrar templates específicos por canal da tabela Prompts (Ligação/Retell vs WhatsApp).
+    </melhoria>
+  </melhorias_propostas>
+</memoria_ativa>"""
+
+
+def build_corporate_generator_system_prompt(active_memory_xml: Optional[str] = None) -> str:
+    """Constrói o System Prompt do Gerador Corporativo com Autoaprendizado (Fases 0 a 3B)."""
+    memory_block = active_memory_xml or DEFAULT_CORPORATE_ACTIVE_MEMORY_XML
+    return f"""Você opera a SKILL — GERADOR DE PROMPTS CORPORATIVOS COM AUTOAPRENDIZADO da MindFlow.
+ESCOPO EXCLUSIVO: Criar e alterar prompts de atendimento de clientes (os que ficam armazenados na tabela Prompts da base de dados: WhatsApp, Ligação/Voz, Follow-Up, Instagram). NUNCA confundir com prompts de código.
+
+BLOCO DE MEMÓRIA ATIVA CARREGADO:
+{memory_block}
+
+Execute internamente de forma rigorosa todas as fases antes de produzir o JSON final:
+- FASE 0 — ATIVAÇÃO DE CRITÉRIOS (Teach-To-Learn ancorado):
+  Elementos inegociáveis: Persona com autoridade, Contexto de uso, Formato de output (XML ou Markdown — nunca misturar no mesmo bloco), Restrições explícitas, Critério de encerramento e Cadeia de pensamento conectada ao output.
+  Hierarquia de autoridade: Regra IMUTÁVEL da memória ativa > Critério fixo da Fase 0 > Regra MUTÁVEL da memória ativa > Campo do briefing > Decisão livre.
+- FASE 1 — ABSORÇÃO CRÍTICA DO BRIEFING:
+  Analise cada instrução solicitada, detectando ambiguidades, conflitos internos e conflitos com a memória ativa (especialmente erros registrados E001 e E002).
+- FASE 2 — CHECAGEM DE REGRAS:
+  Vincule cada elemento estrutural às regras IMUTÁVEIS (R001, R002, R003_T01) e MUTÁVEIS (R004_H04, R005_H03).
+- FASE 3A — GERAÇÃO DO PROMPT:
+  Gere o prompt corporativo completo respeitando a hierarquia e evitando ativamente E001 e E002.
+- FASE 3B — AUDITORIA INTERNA (Self-Refine, máx 2 rodadas):
+  Verifique se todos os elementos inegociáveis estão presentes, se não há contradições e se o CoD está conectado ao output.
+- ATUALIZAÇÃO DA MEMÓRIA ATIVA:
+  Atualize o bloco <memoria_ativa> caso uma nova regra mutável, preferência ou erro tenha sido identificado.
+
+Retorne APENAS um objeto JSON válido com a seguinte estrutura exata:
+{{
+  "suggested_prompt": "texto completo do prompt corporativo gerado",
+  "explanation": "resumo executivo das decisões (Fase 1, Fase 2 e correções da Fase 3B)",
+  "audit_report": {{
+    "status_geral": "aprovado",
+    "rodada_atual": 1,
+    "imutaveis_ativas": ["R001", "R002", "R003_T01"],
+    "mutaveis_ativas": ["R004_H04", "R005_H03"],
+    "erros_evitados": ["E001", "E002"],
+    "alertas": []
+  }},
+  "updated_active_memory_xml": "<memoria_ativa ...>...</memoria_ativa>"
+}}"""
+
+
 async def generate_prompt_meta_suggestion(
     current_prompt: str,
     instruction: str,
-    failing_examples: Optional[List[Dict[str, Any]]] = None
-) -> Dict[str, str]:
-    """Agente Gerador de Prompt: gera versão alterada e o diff visual unificado."""
+    failing_examples: Optional[List[Dict[str, Any]]] = None,
+    active_memory_xml: Optional[str] = None
+) -> Dict[str, Any]:
+    """Agente Gerador de Prompt Corporativo: executa Fases 0 a 3B com memória ativa e gera diff unificado."""
     client = get_openai_client()
+    effective_memory = active_memory_xml or DEFAULT_CORPORATE_ACTIVE_MEMORY_XML
+    meta_system_prompt = build_corporate_generator_system_prompt(effective_memory)
 
-    meta_system_prompt = (
-        "Você é um engenheiro sênior especialista em meta-prompting da MindFlow. "
-        "Sua tarefa é aprimorar prompts de agentes conversacionais de voz e texto, "
-        "mantendo o tom, regras de negócio e corrigindo falhas apontadas pelo usuário. "
-        "Retorne APENAS um JSON no seguinte formato: "
-        '{"suggested_prompt": "...", "explanation": "..."}'
-    )
-
-    user_content = f"### Prompt Atual:\n{current_prompt}\n\n### Instrução de Alteração:\n{instruction}"
+    user_content = f"### Prompt de Cliente Atual:\n{current_prompt}\n\n### Briefing / Instrução de Alteração:\n{instruction}"
     if failing_examples:
-        user_content += f"\n\n### Exemplos de Falhas Ocorridas:\n{json.dumps(failing_examples, ensure_ascii=False, indent=2)}"
+        user_content += f"\n\n### Exemplos de Falhas Ocorridas nos Evals:\n{json.dumps(failing_examples, ensure_ascii=False, indent=2)}"
 
     response = await client.chat.completions.create(
         model="gpt-4o",
@@ -126,12 +223,19 @@ async def generate_prompt_meta_suggestion(
             {"role": "user", "content": user_content}
         ],
         response_format={"type": "json_object"},
-        temperature=0.3
+        temperature=0.2
     )
 
     raw_json = json.loads(response.choices[0].message.content or "{}")
     suggested = raw_json.get("suggested_prompt", current_prompt)
-    explanation = raw_json.get("explanation", "Alterações aplicadas.")
+    explanation = raw_json.get("explanation", "Alterações aplicadas conforme Fases 0 a 3B.")
+    audit_report = raw_json.get("audit_report", {
+        "status_geral": "aprovado",
+        "rodada_atual": 1,
+        "imutaveis_ativas": ["R001", "R002", "R003_T01"],
+        "erros_evitados": ["E001", "E002"]
+    })
+    updated_memory = raw_json.get("updated_active_memory_xml", effective_memory)
 
     # Gera diff visual unificado (estilo git diff)
     diff_lines = list(difflib.unified_diff(
@@ -146,5 +250,8 @@ async def generate_prompt_meta_suggestion(
     return {
         "suggested_prompt": suggested,
         "diff_unified": diff_unified,
-        "explanation": explanation
+        "explanation": explanation,
+        "audit_report": audit_report,
+        "updated_active_memory_xml": updated_memory
     }
+

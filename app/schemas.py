@@ -183,15 +183,19 @@ class PromptRollbackRequest(BaseModel):
 
 
 # ============================================================
-# Schemas: Agente Gerador de Prompt (Meta-Prompting)
+# Schemas: Agente Gerador de Prompt Corporativo (Autoaprendizado)
 # ============================================================
 class MetaGeneratorRequest(BaseModel):
     current_prompt: str
     instruction: str
     failing_examples: Optional[List[Dict[str, Any]]] = None
+    active_memory_xml: Optional[str] = None
 
 
 class MetaGeneratorResponse(BaseModel):
     suggested_prompt: str
     diff_unified: str  # Diff estilo git (linhas + e -)
     explanation: str
+    audit_report: Optional[Dict[str, Any]] = None
+    updated_active_memory_xml: Optional[str] = None
+
