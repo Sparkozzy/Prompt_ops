@@ -85,6 +85,10 @@ class EvalDatasetCreate(BaseModel):
     expected_criteria: str
     requires_tool: bool = False
     expected_tool_name: Optional[str] = None
+    created_by: Optional[str] = None
+    is_refutation_case: bool = False
+    forbidden_literal_ids: List[str] = Field(default_factory=list)
+    forbidden_symbolic_placeholders: List[str] = Field(default_factory=list)
 
 
 class EvalDatasetUpdate(BaseModel):
@@ -95,12 +99,23 @@ class EvalDatasetUpdate(BaseModel):
     requires_tool: Optional[bool] = None
     expected_tool_name: Optional[str] = None
     is_active: Optional[bool] = None
+    updated_by: Optional[str] = None
+    is_refutation_case: Optional[bool] = None
+    forbidden_literal_ids: Optional[List[str]] = None
+    forbidden_symbolic_placeholders: Optional[List[str]] = None
+
+
+class EvalDatasetDelete(BaseModel):
+    deleted_by: str
 
 
 class EvalDatasetRead(EvalDatasetCreate):
     id: UUID
     is_active: bool
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

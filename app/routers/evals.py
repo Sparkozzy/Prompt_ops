@@ -16,7 +16,7 @@ async def create_eval_dataset_case(
     payload: EvalDatasetCreate,
     session: AsyncSession = Depends(get_db_session)
 ):
-    """Cria um caso de teste no dataset dedicado ao cliente/prompt."""
+    """Cria um caso de teste no dataset dedicado ao cliente/prompt com tracing de usuário."""
     item = EvalDataset(
         prompt_id=payload.prompt_id,
         client_id=payload.client_id,
@@ -27,6 +27,10 @@ async def create_eval_dataset_case(
         expected_criteria=payload.expected_criteria,
         requires_tool=payload.requires_tool,
         expected_tool_name=payload.expected_tool_name,
+        created_by=payload.created_by,
+        is_refutation_case=payload.is_refutation_case,
+        forbidden_literal_ids=payload.forbidden_literal_ids,
+        forbidden_symbolic_placeholders=payload.forbidden_symbolic_placeholders,
         is_active=True,
         created_at=get_utc_now()
     )
@@ -119,7 +123,9 @@ async def run_evaluations_batch(
             client_id=version.client_id,
             requires_tool=c.requires_tool,
             expected_tool_name=c.expected_tool_name,
-            version_id=version.id
+            version_id=version.id,
+            forbidden_literal_ids=getattr(c, "forbidden_literal_ids", None) or [],
+            forbidden_symbolic_placeholders=getattr(c, "forbidden_symbolic_placeholders", None) or []
         )
         if eval_result["passed"]:
             passed_count += 1
@@ -182,17 +188,20 @@ async def update_eval_dataset_case(
 @router.delete("/datasets/{dataset_id}")
 async def delete_eval_dataset_case(
     dataset_id: UUID,
+    deleted_by: Optional[str] = Query(None, description="E-mail do usuário que solicitou a exclusão"),
     session: AsyncSession = Depends(get_db_session)
 ):
-    """Desativa ou exclui um caso de teste do dataset de avaliações."""
+    """Desativa um caso de teste do dataset de avaliações registrando autoria (soft-delete)."""
     stmt = select(EvalDataset).where(EvalDataset.id == dataset_id)
     res = await session.execute(stmt)
     item = res.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Caso de teste não encontrado.")
     
-    # Soft delete (ou hard delete)
+    # Soft delete auditado
     item.is_active = False
+    item.deleted_by = deleted_by
+    item.deleted_at = get_utc_now()
     await session.commit()
-    return {"success": True, "message": "Caso de teste desativado com sucesso."}
+    return {"success": True, "message": "Caso de teste desativado com sucesso.", "deleted_by": deleted_by}
 

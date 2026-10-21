@@ -7,6 +7,38 @@ from app.services.llm_service import get_openai_client, render_prompt_template, 
 from app.services.mcp_service import get_client_mcp_urls, get_client_tools_and_map
 
 
+def check_contamination_in_tool_calls(
+    tool_calls_executed: List[Dict[str, Any]],
+    forbidden_literal_ids: Optional[List[str]] = None,
+    forbidden_symbolic_placeholders: Optional[List[str]] = None
+) -> (bool, Optional[str]):
+    """
+    Inspeciona os argumentos das ferramentas executadas buscando contaminação:
+    - Tipo A: Vazamento de IDs literais de casos antigos (ex: '1277', '275983').
+    - Tipo B: Vazamento de placeholders simbólicos não resolvidos (ex: 'singleAccountId', '[singleAccountId]').
+    """
+    if not tool_calls_executed:
+        return False, None
+
+    for t in tool_calls_executed:
+        tool_name = t.get("tool_name", "unknown")
+        args_str = json.dumps(t.get("input", {}), ensure_ascii=False)
+
+        # 1. Checagem Tipo A (IDs Literais de Casos Antigos)
+        if forbidden_literal_ids:
+            for bad_id in forbidden_literal_ids:
+                if f'"{bad_id}"' in args_str or f"'{bad_id}'" in args_str or bad_id in args_str:
+                    return True, f"Contaminação Tipo A detectada na tool '{tool_name}': vazamento do ID literal proibido '{bad_id}'."
+
+        # 2. Checagem Tipo B (Placeholders Simbólicos Não Resolvidos)
+        if forbidden_symbolic_placeholders:
+            for bad_sym in forbidden_symbolic_placeholders:
+                if bad_sym in args_str:
+                    return True, f"Contaminação Tipo B detectada na tool '{tool_name}': envio do placeholder simbólico não resolvido '{bad_sym}'."
+
+    return False, None
+
+
 async def evaluate_single_turn_case(
     prompt_text: str,
     model_name: str,
@@ -17,7 +49,9 @@ async def evaluate_single_turn_case(
     client_id: Optional[str] = None,
     requires_tool: bool = False,
     expected_tool_name: Optional[str] = None,
-    version_id: Optional[Any] = None
+    version_id: Optional[Any] = None,
+    forbidden_literal_ids: Optional[List[str]] = None,
+    forbidden_symbolic_placeholders: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Executa a inferência de um caso de teste conectando aos servidores MCP reais,
@@ -117,8 +151,20 @@ async def evaluate_single_turn_case(
         else:
             reasoning = f"A ferramenta esperada era '{expected_tool_name}', mas foi acionada '{tool_called_name}'. {reasoning}"
 
+    # Regra estrita de Prompt Science: detecção de contaminação Tipo A ou Tipo B
+    is_contaminated, contamination_reason = check_contamination_in_tool_calls(
+        tool_calls_executed=tool_calls_executed,
+        forbidden_literal_ids=forbidden_literal_ids,
+        forbidden_symbolic_placeholders=forbidden_symbolic_placeholders
+    )
+    if is_contaminated:
+        passed = False
+        reasoning = f"REPROVADO POR CONTAMINAÇÃO: {contamination_reason} | Detalhes do Juiz: {reasoning}"
+
     return {
         "passed": passed,
+        "is_contaminated": is_contaminated,
+        "contamination_reason": contamination_reason,
         "generated_response": generated_text,
         "judge_reasoning": reasoning,
         "tool_called": tool_called_name,

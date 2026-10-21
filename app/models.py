@@ -53,8 +53,20 @@ class EvalDataset(Base):
     requires_tool = Column(Boolean, default=False)
     expected_tool_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True, index=True)
+
+    # Campos de Auditoria e Tracing de Usuário
+    created_by = Column(String(255), nullable=True)
+    updated_by = Column(String(255), nullable=True)
+    deleted_by = Column(String(255), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Campos de Governança Científica (Prompt Science)
+    is_refutation_case = Column(Boolean, default=False, index=True)
+    forbidden_literal_ids = Column(JSONB, default=list)
+    forbidden_symbolic_placeholders = Column(JSONB, default=list)
     
     created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now, nullable=False)
 
 
 class EvalRun(Base):
