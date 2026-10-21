@@ -41,9 +41,11 @@ async def suggest_prompt_modifications(payload: MetaGeneratorRequest):
         channel=payload.channel,
         version_id=payload.version_id,
         arena_history=payload.arena_history,
+        chat_history=payload.chat_history,
     )
     return MetaGeneratorResponse(
         suggested_prompt=res["suggested_prompt"],
+        prompt_modified=res.get("prompt_modified", False),
         diff_unified=res["diff_unified"],
         explanation=res["explanation"],
         audit_report=res.get("audit_report"),

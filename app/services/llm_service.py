@@ -164,8 +164,14 @@ DEFAULT_CORPORATE_ACTIVE_MEMORY_XML = """<memoria_ativa versao="1.0" escopo="pro
 def build_corporate_generator_system_prompt(active_memory_xml: Optional[str] = None) -> str:
     """Constrói o System Prompt do Gerador Corporativo com Autoaprendizado (Fases 0 a 3B) e Tools On-Demand MCP."""
     memory_block = active_memory_xml or DEFAULT_CORPORATE_ACTIVE_MEMORY_XML
-    return f"""Você opera a SKILL — GERADOR DE PROMPTS CORPORATIVOS COM AUTOAPRENDIZADO da MindFlow.
-ESCOPO EXCLUSIVO: Criar e alterar prompts de atendimento de clientes (os que ficam armazenados na tabela Prompts da base de dados: WhatsApp, Ligação/Voz, Follow-Up, Instagram). NUNCA confundir com prompts de código.
+    return f"""Você opera a SKILL — GERADOR DE PROMPTS CORPORATIVOS COM AUTOAPRENDIZADO & COPILOT INTERATIVO da MindFlow.
+ESCOPO EXCLUSIVO: Criar, auditar, diagnosticar e alterar prompts de atendimento de clientes (os que ficam armazenados na tabela Prompts da base de dados: WhatsApp, Ligação/Voz, Follow-Up, Instagram). NUNCA confundir com prompts de código.
+
+MODO DE OPERAÇÃO HÍBRIDO (CHAT CONVERSACIONAL À ESQUERDA + EDITOR EM TEMPO REAL À DIREITA):
+- MODO 1 — CONSULTA / DIAGNÓSTICO (Sem alterar o prompt):
+  Se a mensagem do usuário for apenas uma pergunta ou pedido de investigação (ex: "O que aconteceu no atendimento do número +55...?", "Quais tools MCP esse cliente tem?", "Como os outros prompts no RAG fazem agendamento?", "Por que a versão A foi pior na Arena?"), acione as tools MCP necessárias sob demanda, responda detalhadamente em `explanation`, defina `"prompt_modified": false` e retorne `"suggested_prompt"` idêntico ao prompt atual.
+- MODO 2 — EDIÇÃO EM TEMPO REAL DO PROMPT:
+  Se o usuário pedir para criar, alterar, corrigir ou aplicar uma melhoria no prompt (ex: "Aplique isso no prompt", "Adicione a regra X", "Corrija com base na conversa da Arena"), execute rigorosamente as Fases 0 a 3B, defina `"prompt_modified": true`, coloque o texto completo atualizado em `"suggested_prompt"` (ele atualizará o editor à direita em tempo real) e explique o que foi feito em `"explanation"`.
 
 FERRAMENTAS DE CONTEXTO ON-DEMAND (MCP PROMPTOPS):
 Você possui acesso a 5 ferramentas especializadas que pode acionar SOB DEMANDA antes de gerar o JSON final:
@@ -178,7 +184,7 @@ Você possui acesso a 5 ferramentas especializadas que pode acionar SOB DEMANDA 
 BLOCO DE MEMÓRIA ATIVA CARREGADO:
 {memory_block}
 
-Execute internamente de forma rigorosa todas as fases antes de produzir o JSON final:
+Quando estiver no MODO 2 (Edição do Prompt), execute internamente de forma rigorosa todas as fases:
 - FASE 0 — ATIVAÇÃO DE CRITÉRIOS (Teach-To-Learn ancorado):
   Elementos inegociáveis: Persona com autoridade, Contexto de uso, Formato de output (XML ou Markdown — nunca misturar no mesmo bloco), Restrições explícitas, Critério de encerramento e Cadeia de pensamento conectada ao output.
   Hierarquia de autoridade: Regra IMUTÁVEL da memória ativa > Critério fixo da Fase 0 > Regra MUTÁVEL da memória ativa > Campo do briefing > Decisão livre.
@@ -195,8 +201,9 @@ Execute internamente de forma rigorosa todas as fases antes de produzir o JSON f
 
 Retorne APENAS um objeto JSON válido com a seguinte estrutura exata:
 {{
-  "suggested_prompt": "texto completo do prompt corporativo gerado",
-  "explanation": "resumo executivo das decisões (Fase 1, Fase 2, ferramentas consultadas e correções da Fase 3B)",
+  "prompt_modified": true,
+  "suggested_prompt": "texto completo do prompt corporativo gerado (ou o texto original inalterado se prompt_modified=false)",
+  "explanation": "resposta conversacional ao usuário no chat (diagnóstico da consulta ou resumo executivo das alterações aplicadas nas Fases 1, 2 e 3B)",
   "audit_report": {{
     "status_geral": "aprovado",
     "rodada_atual": 1,
@@ -219,11 +226,12 @@ async def generate_prompt_meta_suggestion(
     channel: Optional[str] = "whatsapp",
     version_id: Optional[Any] = None,
     arena_history: Optional[Dict[str, Any]] = None,
+    chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     """
-    Agente Gerador de Prompt Corporativo:
-    Opera com Tool Calling On-Demand (Context MCP: RAG Parent-Child, Supabase do Cliente, Arena A/B, Evals, Docs)
-    e executa Fases 0 a 3B com memória ativa e geração de diff unificado.
+    Agente Gerador e Copilot de Prompt Corporativo:
+    Opera em chat multi-turn com Tool Calling On-Demand (Context MCP: RAG Parent-Child, Supabase do Cliente, Arena A/B, Evals, Docs)
+    e atualiza o prompt em tempo real quando solicitado (Fases 0 a 3B).
     """
     from app.services.context_mcp_service import (
         get_generator_openai_tools,
@@ -240,18 +248,26 @@ async def generate_prompt_meta_suggestion(
         f"channel={channel}, version_id={version_id}, arena_chat_disponivel={has_arena_turns}]"
     )
 
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": meta_system_prompt},
+    ]
+
+    if chat_history:
+        for msg in chat_history[-12:]:
+            r = msg.get("role", "user")
+            c = msg.get("content", "")
+            if r in ("user", "assistant") and c:
+                messages.append({"role": r, "content": c})
+
     user_content = (
         f"{context_hint}\n\n"
-        f"### Prompt de Cliente Atual:\n{current_prompt}\n\n"
-        f"### Briefing / Instrução de Alteração:\n{instruction}"
+        f"### Prompt Atual no Editor Lateral (em tempo real):\n{current_prompt}\n\n"
+        f"### Mensagem / Instrução do Usuário no Chat:\n{instruction}"
     )
     if failing_examples:
         user_content += f"\n\n### Exemplos de Falhas Ocorridas nos Evals:\n{json.dumps(failing_examples, ensure_ascii=False, indent=2)}"
 
-    messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": meta_system_prompt},
-        {"role": "user", "content": user_content},
-    ]
+    messages.append({"role": "user", "content": user_content})
 
     tools_schema = get_generator_openai_tools()
     tools_consulted: List[Dict[str, str]] = []
@@ -300,7 +316,6 @@ async def generate_prompt_meta_suggestion(
                 "content": json.dumps(exec_info["output"], ensure_ascii=False),
             })
     else:
-        # Chamada final sem tools caso tenha atingido o limite de rodadas de investigação
         response = await client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
@@ -314,10 +329,17 @@ async def generate_prompt_meta_suggestion(
     except Exception:
         raw_json = {}
 
-    suggested = raw_json.get("suggested_prompt", current_prompt)
-    explanation = raw_json.get("explanation", "Alterações aplicadas conforme Fases 0 a 3B.")
+    explicit_modified = raw_json.get("prompt_modified")
+    suggested = raw_json.get("suggested_prompt")
+    if explicit_modified is False or not suggested:
+        suggested = current_prompt
+        prompt_modified = False
+    else:
+        prompt_modified = (suggested.strip() != current_prompt.strip())
+
+    explanation = raw_json.get("explanation", "Operação concluída.")
     audit_report = raw_json.get("audit_report", {
-        "status_geral": "aprovado",
+        "status_geral": "aprovado" if prompt_modified else "consulta_informativa",
         "rodada_atual": 1,
         "imutaveis_ativas": ["R001", "R002", "R003_T01"],
         "erros_evitados": ["E001", "E002"]
@@ -336,6 +358,7 @@ async def generate_prompt_meta_suggestion(
 
     return {
         "suggested_prompt": suggested,
+        "prompt_modified": prompt_modified,
         "diff_unified": diff_unified,
         "explanation": explanation,
         "audit_report": audit_report,

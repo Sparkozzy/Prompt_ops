@@ -194,6 +194,7 @@ class GeneratorToolConsulted(BaseModel):
 class MetaGeneratorRequest(BaseModel):
     current_prompt: str
     instruction: str
+    chat_history: List[Dict[str, str]] = Field(default_factory=list)
     failing_examples: Optional[List[Dict[str, Any]]] = None
     active_memory_xml: Optional[str] = None
     prompt_id: Optional[int] = None
@@ -205,6 +206,7 @@ class MetaGeneratorRequest(BaseModel):
 
 class MetaGeneratorResponse(BaseModel):
     suggested_prompt: str
+    prompt_modified: bool = False
     diff_unified: str  # Diff estilo git (linhas + e -)
     explanation: str
     audit_report: Optional[Dict[str, Any]] = None
