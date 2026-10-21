@@ -28,6 +28,13 @@ async def on_startup():
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("ALTER TABLE prompt_versions ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'whatsapp';"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'whatsapp';"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS is_refutation_case BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS forbidden_literal_ids JSONB DEFAULT '[]'::jsonb;"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS forbidden_symbolic_placeholders JSONB DEFAULT '[]'::jsonb;"))
     print("[PromptOps Startup] Tabelas e migrações do PostgreSQL dedicado concluídas.")
 
 # Inclusão dos roteadores da API v1
