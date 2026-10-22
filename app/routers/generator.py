@@ -112,6 +112,7 @@ async def suggest_prompt_modifications(payload: MetaGeneratorRequest):
         version_id=payload.version_id,
         arena_history=payload.arena_history,
         chat_history=payload.chat_history,
+        attachments=[att.dict() if hasattr(att, "dict") else att.model_dump() for att in (payload.attachments or [])],
     )
 
     # Se o compilador do Agente do PromptOps atualizou a memória ativa durante a geração, persiste no banco compartilhado

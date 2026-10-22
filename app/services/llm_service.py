@@ -244,11 +244,12 @@ async def generate_prompt_meta_suggestion(
     version_id: Optional[Any] = None,
     arena_history: Optional[Dict[str, Any]] = None,
     chat_history: Optional[List[Dict[str, str]]] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Agente Gerador e Copilot de Prompt Corporativo:
     Opera em chat multi-turn com Tool Calling On-Demand (Context MCP: RAG Parent-Child, Supabase do Cliente, Arena A/B, Evals, Docs)
-    e atualiza o prompt em tempo real quando solicitado (Fases 0 a 3B).
+    e suporte multimodal a fotos/prints e documentos anexados. Atualiza o prompt em tempo real quando solicitado (Fases 0 a 3B).
     """
     from app.services.context_mcp_service import (
         get_generator_openai_tools,
@@ -276,18 +277,53 @@ async def generate_prompt_meta_suggestion(
             if r in ("user", "assistant") and c:
                 messages.append({"role": r, "content": c})
 
-    user_content = (
-        f"{context_hint}\n\n"
-        f"### Prompt Atual no Editor Lateral (em tempo real):\n{current_prompt}\n\n"
+    # Constrói o texto do usuário
+    user_text_parts = [
+        f"{context_hint}\n\n",
+        f"### Prompt Atual no Editor Lateral (em tempo real):\n{current_prompt}\n\n",
         f"### Mensagem / Instrução do Usuário no Chat:\n{instruction}\n\n"
+    ]
+
+    # Processa documentos de texto / PDF anexados
+    image_parts: List[Dict[str, Any]] = []
+    if attachments:
+        doc_texts = []
+        for att in attachments:
+            att_type = att.get("type", "document")
+            att_name = att.get("name", "anexo")
+            data_url = att.get("data_url") or ""
+            text_cont = att.get("text_content") or ""
+
+            if att_type == "image" or data_url.startswith("data:image/"):
+                image_parts.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": data_url,
+                        "detail": "high"
+                    }
+                })
+            elif text_cont:
+                doc_texts.append(f"--- Documento Anexado: {att_name} ---\n{text_cont}\n--- Fim do Documento ---")
+
+        if doc_texts:
+            user_text_parts.append(f"### Documentos Anexados pelo Usuário:\n" + "\n\n".join(doc_texts) + "\n\n")
+
+    user_text_parts.append(
         f"LEMBRETE MANDATÓRIO DE PIPELINE (PROMPTOPS): Se a sua resposta modificar ou refinar o prompt, você DEVE "
         f"obrigatoriamente chamar a ferramenta `manage_prompt_eval_case` (para registrar um caso de teste/refutação adversarial validando a alteração) "
         f"e em seguida `run_prompt_eval_suite` (para testar o prompt em tempo real e aferir o Quality Gate >= 90%) antes de gerar a resposta final."
     )
     if failing_examples:
-        user_content += f"\n\n### Exemplos de Falhas Ocorridas nos Evals:\n{json.dumps(failing_examples, ensure_ascii=False, indent=2)}"
+        user_text_parts.append(f"\n\n### Exemplos de Falhas Ocorridas nos Evals:\n{json.dumps(failing_examples, ensure_ascii=False, indent=2)}")
 
-    messages.append({"role": "user", "content": user_content})
+    full_user_text = "".join(user_text_parts)
+
+    # Se houver imagens anexadas, usa formato de partes multimodais na mensagem do usuário
+    if image_parts:
+        content_payload: List[Dict[str, Any]] = [{"type": "text", "text": full_user_text}] + image_parts
+        messages.append({"role": "user", "content": content_payload})
+    else:
+        messages.append({"role": "user", "content": full_user_text})
 
     tools_schema = get_generator_openai_tools()
     tools_consulted: List[Dict[str, str]] = []

@@ -215,10 +215,19 @@ class GeneratorToolConsulted(BaseModel):
     output: Optional[Any] = None
 
 
+class PromptAttachment(BaseModel):
+    name: str
+    type: str  # 'image' ou 'document'
+    mime_type: Optional[str] = None
+    data_url: Optional[str] = None  # data:image/png;base64,...
+    text_content: Optional[str] = None  # Para documentos de texto/pdf extraídos no client ou server
+
+
 class MetaGeneratorRequest(BaseModel):
     current_prompt: str
     instruction: str
     chat_history: List[Dict[str, str]] = Field(default_factory=list)
+    attachments: Optional[List[PromptAttachment]] = Field(default_factory=list)
     failing_examples: Optional[List[Dict[str, Any]]] = None
     active_memory_xml: Optional[str] = None
     prompt_id: Optional[int] = None
