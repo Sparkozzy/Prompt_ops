@@ -192,6 +192,10 @@ Você possui acesso a 9 ferramentas especializadas que pode acionar SOB DEMANDA 
 
 REGRAS CIENTÍFICAS PARA CRIAÇÃO E EXECUÇÃO DE EVALS (MÉTODO POPPERIANO — IGUAL AO ANTIGRAVITY):
 Sempre que criar ou editar casos de teste com `manage_prompt_eval_case`:
+- **Modelagem do Caso de Teste de Atendimento**:
+  - `user_message`: DEVE SER ESTRITAMENTE a mensagem simulada de um CLIENTE/LEAD REAL no WhatsApp (ex: "Muito obrigado pelo atendimento, até mais!" ou "Gostaria de saber os horários disponíveis amanhã"). **NUNCA** coloque o comando ou instrução do desenvolvedor/engenheiro no campo `user_message`.
+  - `scenario_name`: Nome curto do cenário operacional (ex: "Encerramento cordial com despedida padronizada").
+  - `expected_criteria`: A rubrica para o LLM Judge avaliar a resposta do robô (ex: "O assistente deve se despedir cordialmente e conter a frase exata 'Tenha um excelente dia'.").
 - **Rigor de Falseabilidade Popperiana**: Para testar uma regra ou hipótese de verdade, crie pelo menos **1 Caso de Refutação Adversarial (`is_refutation_case = true`)** — um cenário de borda/adversarial (ex: cliente tentando burlar restrição, pedindo horário fora da janela, omitindo variável obrigatória ou induzindo vazamento de ID) desenhado especificamente para tentar quebrar o prompt.
 - **Guardrails Determinísticos Anti-Contaminação (`expected_assertions`)**:
   - Prompts **Tipo A (Atendimento em Produção)**: adicione `"forbidden_literal_ids": ["172025", "181629", "163951"]` (ou IDs que jamais devem ser chumbados/vazados) e `"max_questions_per_turn": 1`.
@@ -412,21 +416,55 @@ async def generate_prompt_meta_suggestion(
     called_tool_names = [t.get("tool_name") for t in tools_consulted]
     if prompt_modified and "run_prompt_eval_suite" not in called_tool_names:
         try:
-            # 1. Se ainda não criou caso de teste nesta rodada, cria um caso de refutação adversarial
+            # 1. Se ainda não criou caso de teste nesta rodada, sintetiza um caso de teste realista com mensagem de cliente final
             if "manage_prompt_eval_case" not in called_tool_names:
+                # Sintetiza mensagem do lead e critério correspondente à instrução recebida
+                try:
+                    synth_resp = await client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "Você é um engenheiro de testes de atendimento automatizado via WhatsApp. "
+                                    "Dado uma instrução de alteração no prompt corporativo de atendimento, gere um caso de teste realista contendo: "
+                                    "1) scenario_name: Nome conciso do cenário (ex: 'Encerramento cordial com despedida'); "
+                                    "2) user_message: A mensagem exata que um CLIENTE/LEAD REAL enviaria pelo WhatsApp para disparar esse comportamento (NÃO repita a instrução do desenvolvedor!); "
+                                    "3) expected_criteria: A rubrica de avaliação para o LLM Judge (o que o assistente DEVE ou NÃO DEVE responder). "
+                                    "Retorne APENAS um JSON válido no formato: "
+                                    "{\"scenario_name\": \"...\", \"user_message\": \"...\", \"expected_criteria\": \"...\"}"
+                                )
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Instrução aplicada ao prompt: {instruction}"
+                            }
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.3
+                    )
+                    synth_data = json.loads(synth_resp.choices[0].message.content or "{}")
+                    sc_name = synth_data.get("scenario_name") or f"Validação: {instruction[:35]}"
+                    u_msg = synth_data.get("user_message") or "Olá, gostaria de tirar uma dúvida sobre o atendimento."
+                    exp_crit = synth_data.get("expected_criteria") or f"O assistente deve cumprir a diretriz: {instruction}"
+                except Exception:
+                    sc_name = f"Validação: {instruction[:35]}"
+                    u_msg = "Olá, obrigado pelas informações!"
+                    exp_crit = f"O assistente deve responder adequadamente respeitando: {instruction}"
+
                 eval_case_res = await execute_generator_tool_call(
                     tool_name="manage_prompt_eval_case",
                     arguments={
                         "action": "create",
-                        "scenario_name": f"REF: Validação de alteração — {instruction[:45]}",
-                        "user_message": instruction,
-                        "expected_criteria": f"A resposta do assistente deve cumprir estritamente a nova diretriz: {instruction}",
+                        "scenario_name": sc_name,
+                        "user_message": u_msg,
+                        "expected_criteria": exp_crit,
                         "is_refutation_case": True,
                     },
                     context=tool_context,
                 )
                 b_case = dict(eval_case_res["badge"])
-                b_case["arguments"] = {"action": "create", "is_refutation_case": True}
+                b_case["arguments"] = {"action": "create", "scenario_name": sc_name, "user_message": u_msg}
                 b_case["output"] = eval_case_res.get("output")
                 tools_consulted.append(b_case)
 
