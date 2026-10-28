@@ -33,10 +33,25 @@ async def generate_chat_response(
 ) -> Dict[str, Any]:
     """Gera resposta via OpenAI com suporte a Function Calling real via servidores MCP."""
     client = get_openai_client()
-    messages = [{"role": "system", "content": system_prompt}]
+    messages = [{"role": "system", "content": system_prompt or ""}]
     for msg in chat_history:
-        messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
-    messages.append({"role": "user", "content": user_message})
+        role = msg.get("role", "user")
+        m_item: Dict[str, Any] = {"role": role}
+        raw_content = msg.get("content")
+        # Mensagens do assistente com tool_calls podem ter content=None ou string
+        if raw_content is not None:
+            m_item["content"] = str(raw_content)
+        elif role != "assistant" or not msg.get("tool_calls"):
+            m_item["content"] = ""
+        else:
+            m_item["content"] = None
+
+        if "tool_calls" in msg and msg["tool_calls"]:
+            m_item["tool_calls"] = msg["tool_calls"]
+        if "tool_call_id" in msg and msg["tool_call_id"]:
+            m_item["tool_call_id"] = msg["tool_call_id"]
+        messages.append(m_item)
+    messages.append({"role": "user", "content": str(user_message or "")})
 
     kwargs: Dict[str, Any] = {
         "model": model,
