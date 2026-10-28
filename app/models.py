@@ -63,8 +63,11 @@ class EvalDataset(Base):
     deleted_by = Column(String(255), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Campos de Governança Científica (Prompt Science)
+    # Campos de Governança Científica (Prompt Science M-SPEM v2)
     is_refutation_case = Column(Boolean, default=False, index=True)
+    is_anti_case = Column(Boolean, default=False, index=True)
+    forbid_tool_call = Column(Boolean, default=False)
+    expected_tool_args = Column(JSONType, default=dict)
     forbidden_literal_ids = Column(JSONType, default=list)
     forbidden_symbolic_placeholders = Column(JSONType, default=list)
     
@@ -206,4 +209,165 @@ class PromptEngineeringDoc(Base):
     updated_by = Column(String(255), default="system_seed", nullable=False)
     change_summary = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now, nullable=False)
+
+
+# ============================================================================
+# Modelos de Governança Científica Perene (M-SPEM v2 — Salvaguardas S1 a S9)
+# ============================================================================
+
+class FailureMode(Base):
+    """Taxonomia oficial de Modos de Falha cognitivos/operacionais (FM-01 a FM-07)."""
+    __tablename__ = "failure_modes"
+
+    failure_mode_id = Column(String(50), primary_key=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+
+
+class ScientificHypothesis(Base):
+    """
+    Hipóteses Gerais (Nível 2 — G-*), livres de nomes de clientes/tools.
+    Salvaguarda S3: Não armazena placar editável; o placar é calculado de `hypothesis_events`.
+    """
+    __tablename__ = "scientific_hypotheses"
+
+    hypothesis_id = Column(String(100), primary_key=True)
+    legacy_ids = Column(JSONType, default=list)
+    failure_mode_id = Column(String(50), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    general_statement = Column(Text, nullable=False)
+    scope_conditions = Column(Text, nullable=False)
+    mechanism = Column(Text, nullable=True)
+    risky_prediction = Column(Text, nullable=True)
+    anti_cases_requirement = Column(Text, nullable=True)
+    created_by = Column(String(255), default="system_seed", nullable=False)
+    created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now, nullable=False)
+
+
+class ExperimentPreregistration(Base):
+    """
+    Salvaguarda S1 e S5: Pré-registro congelado com hash SHA-256 antes da execução de uma rodada.
+    """
+    __tablename__ = "experiment_preregistrations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    prereg_sha256 = Column(String(64), unique=True, nullable=False, index=True)
+    hypothesis_id = Column(String(100), nullable=False, index=True)
+    round_mode = Column(String(20), nullable=False)
+    failure_mode_id = Column(String(50), nullable=False, index=True)
+    domain_id = Column(String(100), nullable=False, index=True)
+    prompt_id = Column(BigInteger, nullable=True, index=True)
+    channel = Column(String(50), default="whatsapp", nullable=False)
+    delta_p_description = Column(Text, nullable=False)
+    model_name = Column(String(100), default="gpt-4o", nullable=False)
+    production_temperature = Column(Float, default=0.7, nullable=False)
+    k_samples = Column(Integer, default=3, nullable=False)
+    cases_json = Column(JSONType, nullable=False)
+    created_by = Column(String(255), default="antigravity_agent", nullable=False)
+    frozen_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+
+
+class ScientificExperimentRun(Base):
+    """
+    Salvaguardas S6 e S7: Execução experimental com manifesto de reprodutibilidade e status 'started'.
+    """
+    __tablename__ = "scientific_experiment_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(String(100), unique=True, nullable=False, index=True)
+    prereg_sha256 = Column(String(64), nullable=False, index=True)
+    hypothesis_id = Column(String(100), nullable=False, index=True)
+    round_mode = Column(String(20), nullable=False)
+    domain_id = Column(String(100), nullable=False, index=True)
+    prompt_id = Column(BigInteger, nullable=True, index=True)
+    channel = Column(String(50), default="whatsapp", nullable=False)
+    model_name = Column(String(100), default="gpt-4o", nullable=False)
+    temperature = Column(Float, default=0.7, nullable=False)
+    status = Column(String(50), default="started", nullable=False, index=True)
+    control_prompt_sha256 = Column(String(64), nullable=True)
+    treatment_prompt_sha256 = Column(String(64), nullable=True)
+    stats_json = Column(JSONType, nullable=True)
+    manifest_json = Column(JSONType, nullable=True)
+    started_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class HypothesisEvent(Base):
+    """
+    Salvaguarda S3: Log append-only de eventos científicos (replicações pareadas, auditorias).
+    """
+    __tablename__ = "hypothesis_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id = Column(String(100), unique=True, nullable=False, index=True)
+    event_type = Column(String(50), nullable=False, index=True)
+    hypothesis_id = Column(String(100), nullable=True, index=True)
+    run_id = Column(String(100), nullable=True, index=True)
+    prereg_sha256 = Column(String(64), nullable=True)
+    round_mode = Column(String(20), nullable=True)
+    domain_id = Column(String(100), nullable=True, index=True)
+    prompt_id = Column(BigInteger, nullable=True, index=True)
+    channel = Column(String(50), nullable=True)
+    model_name = Column(String(100), nullable=True, index=True)
+    temperature = Column(Float, nullable=True)
+    n_cases = Column(Integer, default=0)
+    k_samples = Column(Integer, default=1)
+    control_pass_rate = Column(Float, nullable=True)
+    treatment_pass_rate = Column(Float, nullable=True)
+    anti_case_regressions = Column(Integer, default=0)
+    contamination_type_a = Column(Integer, default=0)
+    contamination_type_b = Column(Integer, default=0)
+    mcnemar_p = Column(Float, nullable=True)
+    posterior_prob_treatment_better = Column(Float, nullable=True)
+    verdict = Column(String(50), nullable=True)
+    score_delta = Column(Integer, default=0, nullable=False)
+    evidence_ref = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+
+
+class PromptVersionHypothesis(Base):
+    """
+    Proveniência Científica: Vincula cada versão de prompt às hipóteses/teorias gerais (G-*).
+    """
+    __tablename__ = "prompt_version_hypotheses"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    version_id = Column(UUID(as_uuid=True), ForeignKey("prompt_versions.id", ondelete="CASCADE"), nullable=True, index=True)
+    prompt_id = Column(BigInteger, nullable=False, index=True)
+    channel = Column(String(50), default="whatsapp", nullable=False, index=True)
+    hypothesis_id = Column(String(100), nullable=False, index=True)
+    round_mode = Column(String(20), default="APPLY", nullable=False)
+    delta_p_summary = Column(Text, nullable=False)
+    prereg_sha256 = Column(String(64), nullable=True)
+    run_id = Column(String(100), nullable=True)
+    author_email = Column(String(255), default="antigravity_agent", nullable=False)
+    created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+
+
+class GlobalEvalCase(Base):
+    """
+    Biblioteca transversal de Casos de Refutação e Anti-Casos indexada por Modo de Falha (FM-*).
+    """
+    __tablename__ = "global_eval_cases"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    failure_mode_id = Column(String(50), nullable=False, index=True)
+    hypothesis_id = Column(String(100), nullable=True, index=True)
+    channel = Column(String(50), default="whatsapp", nullable=False, index=True)
+    scenario_name = Column(String(255), nullable=False)
+    is_anti_case = Column(Boolean, default=False, index=True)
+    is_refutation_case = Column(Boolean, default=True, index=True)
+    input_data = Column(JSONType, nullable=False)
+    expected_criteria = Column(Text, nullable=False)
+    expected_tool_name = Column(String(100), nullable=True)
+    expected_tool_args = Column(JSONType, default=dict)
+    forbid_tool_call = Column(Boolean, default=False)
+    forbidden_literal_ids = Column(JSONType, default=list)
+    forbidden_symbolic_placeholders = Column(JSONType, default=list)
+    created_by = Column(String(255), default="red_team_refuter", nullable=False)
+    created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+
 

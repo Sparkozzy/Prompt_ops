@@ -109,6 +109,9 @@ class EvalDatasetCreate(BaseModel):
     expected_tool_name: Optional[str] = None
     created_by: Optional[str] = None
     is_refutation_case: bool = False
+    is_anti_case: bool = False
+    forbid_tool_call: bool = False
+    expected_tool_args: Dict[str, Any] = Field(default_factory=dict)
     forbidden_literal_ids: List[str] = Field(default_factory=list)
     forbidden_symbolic_placeholders: List[str] = Field(default_factory=list)
 
@@ -123,6 +126,9 @@ class EvalDatasetUpdate(BaseModel):
     is_active: Optional[bool] = None
     updated_by: Optional[str] = None
     is_refutation_case: Optional[bool] = None
+    is_anti_case: Optional[bool] = None
+    forbid_tool_call: Optional[bool] = None
+    expected_tool_args: Optional[Dict[str, Any]] = None
     forbidden_literal_ids: Optional[List[str]] = None
     forbidden_symbolic_placeholders: Optional[List[str]] = None
 
@@ -245,4 +251,105 @@ class MetaGeneratorResponse(BaseModel):
     audit_report: Optional[Dict[str, Any]] = None
     updated_active_memory_xml: Optional[str] = None
     tools_consulted: List[GeneratorToolConsulted] = Field(default_factory=list)
+
+
+# ============================================================
+# Schemas: Ciência Reprodutível de Prompts (M-SPEM v2 — Salvaguardas S1 a S9)
+# ============================================================
+class ScientificHypothesisCreate(BaseModel):
+    hypothesis_id: str = Field(..., description="ID da Hipótese Geral iniciando com 'G-' (ex: G-PRIOR)")
+    legacy_ids: List[str] = Field(default_factory=list)
+    failure_mode_id: str = Field(..., description="Modo de falha da taxonomia (FM-01 a FM-07)")
+    title: str
+    general_statement: str
+    scope_conditions: str
+    mechanism: Optional[str] = None
+    risky_prediction: Optional[str] = None
+    anti_cases_requirement: Optional[str] = None
+    created_by: str = "antigravity_agent"
+
+
+class PreregistrationCreateRequest(BaseModel):
+    hypothesis_id: str
+    round_mode: str = Field(..., description="'CREATE' ou 'APPLY' (1 Rodada = 1 ΔP = 1 Hipótese)")
+    failure_mode_id: str
+    domain_id: str
+    prompt_id: Optional[int] = None
+    channel: str = "whatsapp"
+    delta_p_description: str
+    model_name: str = "gpt-4o"
+    production_temperature: float = 0.7
+    k_samples: int = 3
+    cases: List[Dict[str, Any]]
+    created_by: str = "antigravity_agent"
+
+
+class ExperimentRunStartRequest(BaseModel):
+    prereg_sha256: str
+    hypothesis_id: str
+    round_mode: str = "APPLY"
+    domain_id: str
+    prompt_id: Optional[int] = None
+    channel: str = "whatsapp"
+    model_name: str = "gpt-4o"
+    temperature: float = 0.7
+    run_id: Optional[str] = None
+
+
+class PairedCaseOutcomeItem(BaseModel):
+    case_id: str
+    is_anti_case: bool = False
+    k_samples: int = 1
+    control_passes: int = 0
+    treatment_passes: int = 0
+    treatment_contamination_a: int = 0
+    treatment_contamination_b: int = 0
+
+
+class ExperimentRunCompleteRequest(BaseModel):
+    run_id: str
+    prereg_sha256: str
+    hypothesis_id: str
+    round_mode: str = "APPLY"
+    domain_id: str
+    prompt_id: Optional[int] = None
+    channel: str = "whatsapp"
+    model_name: str = "gpt-4o"
+    temperature: float = 0.7
+    k_samples: int = 1
+    control_prompt_sha256: Optional[str] = None
+    treatment_prompt_sha256: Optional[str] = None
+    paired_outcomes: List[PairedCaseOutcomeItem]
+    notes: Optional[str] = None
+    raw_manifest: Optional[Dict[str, Any]] = None
+
+
+class PromptVersionHypothesisCreate(BaseModel):
+    version_id: Optional[UUID] = None
+    prompt_id: int
+    channel: str = "whatsapp"
+    hypothesis_id: str
+    round_mode: str = "APPLY"
+    delta_p_summary: str
+    prereg_sha256: Optional[str] = None
+    run_id: Optional[str] = None
+    author_email: str = "antigravity_agent"
+
+
+class GlobalEvalCaseCreate(BaseModel):
+    failure_mode_id: str
+    hypothesis_id: Optional[str] = None
+    channel: str = "whatsapp"
+    scenario_name: str
+    is_anti_case: bool = False
+    is_refutation_case: bool = True
+    input_data: Dict[str, Any]
+    expected_criteria: str
+    expected_tool_name: Optional[str] = None
+    expected_tool_args: Dict[str, Any] = Field(default_factory=dict)
+    forbid_tool_call: bool = False
+    forbidden_literal_ids: List[str] = Field(default_factory=list)
+    forbidden_symbolic_placeholders: List[str] = Field(default_factory=list)
+    created_by: str = "red_team_refuter"
+
 

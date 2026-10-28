@@ -29,6 +29,9 @@ async def create_eval_dataset_case(
         expected_tool_name=payload.expected_tool_name,
         created_by=payload.created_by,
         is_refutation_case=payload.is_refutation_case,
+        is_anti_case=payload.is_anti_case,
+        forbid_tool_call=payload.forbid_tool_call,
+        expected_tool_args=payload.expected_tool_args,
         forbidden_literal_ids=payload.forbidden_literal_ids,
         forbidden_symbolic_placeholders=payload.forbidden_symbolic_placeholders,
         is_active=True,
@@ -125,7 +128,9 @@ async def run_evaluations_batch(
             expected_tool_name=c.expected_tool_name,
             version_id=version.id,
             forbidden_literal_ids=getattr(c, "forbidden_literal_ids", None) or [],
-            forbidden_symbolic_placeholders=getattr(c, "forbidden_symbolic_placeholders", None) or []
+            forbidden_symbolic_placeholders=getattr(c, "forbidden_symbolic_placeholders", None) or [],
+            forbid_tool_call=bool(getattr(c, "forbid_tool_call", False)),
+            expected_tool_args=getattr(c, "expected_tool_args", None) or {},
         )
         if eval_result["passed"]:
             passed_count += 1

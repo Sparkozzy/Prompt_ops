@@ -3,12 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import prompts, arena, evals, generator
+from app.routers import prompts, arena, evals, generator, science
 
 app = FastAPI(
     title="PromptOps Backend — MindFlow",
     description="Plataforma interna para criação, versionamento, arena de testes e pipeline de evaluations com Quality Gate de 90%.",
-    version="0.1.0"
+    version="0.2.0"
 )
 
 # CORS liberado para o Hub frontend
@@ -34,6 +34,9 @@ async def on_startup():
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS is_refutation_case BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS is_anti_case BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS forbid_tool_call BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS expected_tool_args JSONB DEFAULT '{}'::jsonb;"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS forbidden_literal_ids JSONB DEFAULT '[]'::jsonb;"))
         await conn.execute(text("ALTER TABLE prompt_eval_datasets ADD COLUMN IF NOT EXISTS forbidden_symbolic_placeholders JSONB DEFAULT '[]'::jsonb;"))
     print("[PromptOps Startup] Tabelas e migrações do PostgreSQL dedicado concluídas.")
@@ -43,6 +46,7 @@ app.include_router(prompts.router, prefix="/api/v1")
 app.include_router(arena.router, prefix="/api/v1")
 app.include_router(evals.router, prefix="/api/v1")
 app.include_router(generator.router, prefix="/api/v1")
+app.include_router(science.router, prefix="/api/v1")
 
 # Servidor MCP Nativo (SSE) de Contexto, RAG Parent-Child e Diagnóstico Multi-Tenant
 try:

@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from typing import Dict, Any, List, Optional
 from openai import AsyncOpenAI
@@ -36,6 +37,11 @@ def check_contamination_in_tool_calls(
                 if bad_sym in args_str:
                     return True, f"Contaminação Tipo B detectada na tool '{tool_name}': envio do placeholder simbólico não resolvido '{bad_sym}'."
 
+        # 3. Detector automático universal de ponteiros entre colchetes [var] (Salvaguarda S5)
+        bracket_match = re.search(r"\[[A-Za-z_][A-Za-z0-9_]*\]", args_str)
+        if bracket_match:
+            return True, f"Contaminação Tipo B detectada na tool '{tool_name}': envio de ponteiro simbólico entre colchetes '{bracket_match.group(0)}'."
+
     return False, None
 
 
@@ -51,11 +57,14 @@ async def evaluate_single_turn_case(
     expected_tool_name: Optional[str] = None,
     version_id: Optional[Any] = None,
     forbidden_literal_ids: Optional[List[str]] = None,
-    forbidden_symbolic_placeholders: Optional[List[str]] = None
+    forbidden_symbolic_placeholders: Optional[List[str]] = None,
+    forbid_tool_call: bool = False,
+    expected_tool_args: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Executa a inferência de um caso de teste conectando aos servidores MCP reais,
-    valida a execução de ferramentas e submete o resultado ao LLM Juiz.
+    valida a execução de ferramentas (incluindo critérios positivos S5 e anti-casos)
+    e submete o resultado ao LLM Juiz.
     """
     start_time = time.time()
     user_msg = case_input.get("user_message", "")
@@ -99,7 +108,20 @@ async def evaluate_single_turn_case(
             tool_call_valid = False
     elif tool_calls_executed:
         tool_called_name = tool_calls_executed[0]["tool_name"]
-        tool_call_valid = True
+        tool_call_valid = not forbid_tool_call
+
+    # Validação positiva de argumentos esperados (Salvaguarda S5)
+    args_mismatch_reason = None
+    if expected_tool_args and tool_calls_executed:
+        first_input = tool_calls_executed[0].get("input") or {}
+        for k, exp_v in expected_tool_args.items():
+            if str(first_input.get(k)) != str(exp_v):
+                args_mismatch_reason = (
+                    f"Critério Positivo S5 violado no argumento '{k}': "
+                    f"esperado='{exp_v}', recebido='{first_input.get(k)}'."
+                )
+                tool_call_valid = False
+                break
 
     # 4. Formata o sumário de tools para contextualizar o LLM Juiz
     if tool_calls_executed:
@@ -143,13 +165,24 @@ async def evaluate_single_turn_case(
     reasoning = judge_eval.get("reasoning", "Sem justificativa.")
     execution_time_ms = int((time.time() - start_time) * 1000)
 
+    # Regra estrita: se era Anti-Caso (forbid_tool_call) e disparou tool, reprova por Falso Positivo
+    if forbid_tool_call and tool_calls_executed:
+        passed = False
+        reasoning = f"REPROVADO EM ANTI-CASO (Falso Positivo / Sobre-disparo): a tool '{tool_called_name}' foi acionada quando forbid_tool_call=True. | {reasoning}"
+
     # Regra estrita: se uma tool era requerida e não foi acionada com sucesso, reprova
     if requires_tool and not tool_call_valid:
         passed = False
         if not tool_calls_executed:
             reasoning = f"A ferramenta obrigatória '{expected_tool_name}' não foi acionada. {reasoning}"
+        elif args_mismatch_reason:
+            reasoning = f"{args_mismatch_reason} | {reasoning}"
         else:
             reasoning = f"A ferramenta esperada era '{expected_tool_name}', mas foi acionada '{tool_called_name}'. {reasoning}"
+
+    if args_mismatch_reason and passed:
+        passed = False
+        reasoning = f"{args_mismatch_reason} | {reasoning}"
 
     # Regra estrita de Prompt Science: detecção de contaminação Tipo A ou Tipo B
     is_contaminated, contamination_reason = check_contamination_in_tool_calls(

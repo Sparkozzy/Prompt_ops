@@ -46,39 +46,50 @@ ENGINEERING_DOCS_TITLES: Dict[str, str] = {
 }
 
 ENGINEERING_DOCS_LIBRARY: Dict[str, str] = {
-    "prompt_hypotheses_ledger": """# Livro-Razão de Hipóteses Científicas de Prompts (Prompt Hypotheses Ledger)
+    "prompt_hypotheses_ledger": """# Livro-Razão de Hipóteses Científicas de Prompts (Prompt Hypotheses Ledger — M-SPEM v2)
 
-> **Documento Oficial Sincronizado (Antigravity <-> PromptOps):** Livro-Razão Vivo de Hipóteses, Teorias e Experimentos de Engenharia de Prompts da MindFlow.
+> **Documento Oficial Sincronizado (Antigravity <-> PromptOps):** Livro-Razão Vivo de Hipóteses Gerais (`G-*`), Modos de Falha (`FM-*`) e Replicações Independentes da MindFlow, derivado deterministicamente por `prompt_science/score.py`.
 
-## 1. Regras de Pontuação (Método Hipotético-Dedutivo de Karl Popper)
-- **Nascimento:** Toda nova hipótese inicia com `0 pontos` (Tese + Proposição + Requisito de Refutação).
-- **Aprovação em Teste de Refutação (`+1 ponto`):** Ganha `+1 ponto` a cada caso novo de refutação superado com sucesso.
-- **Erro em Teste de Refutação (`-2 pontos`):** Perde `-2 pontos` a cada falha (penalidade assimétrica 2:1).
-- **Promoção a Teoria (`>= 8 pontos`):** Promovida a `🏆 TEORIA CONSOLIDADA` ao atingir 8 pontos e Quality Gate `> 90%` no PromptOps.
-- **Morte Científica (`<= -4 pontos`):** Declarada `❌ REFUTADA`, banida permanentemente de todos os prompts.
-- **Regra dos 7 Pontos:** Se uma Teoria falhar em produção/novo Eval, comunicar ao usuário e reduzir a Hipótese com `7 pontos`.
+## 1. Arquitetura em 3 Níveis e Regra de Ouro (`1 Rodada = 1 Mutação ΔP = 1 Hipótese G-*`)
+- **Nível 0 (Especificação do Cliente):** Dados factuais do tenant (telefones, horários, preços) vivem no prompt do cliente + Eval de regressão, nunca como hipótese.
+- **Nível 1 (Instância Local):** Aplicação parametrizada em um agente/API vinculada a uma `G-*`.
+- **Nível 2 (Hipótese Geral `G-*`):** Princípios cognitivos/estruturais transferíveis entre domínios e clientes, organizados por Modo de Falha (`FM-01` a `FM-07`).
 
-## 2. Teorias Consolidadas (`>= 8 pontos` — Prioridade Máxima)
-- **`T-01` (`8 pontos` — 🏆 TEORIA CONSOLIDADA):** Isolamento de Estado por Variáveis Simbólicas (`<variaveis>`) + Few-Shot Estrutural com CoD (`<raciocinio_interno_cod>`). Todo prompt que aciona ferramentas MCP deve declarar `<variaveis>` com ponteiros simbólicos (`[singleUserId]`, `[singleAccountId]`, `[unitId]`, `[selectedArea]`, etc.) e jamais usar IDs numéricos literais de casos antigos nos exemplos.
+## 2. Regras de Pontuação por Replicação Independente (Salvaguardas S1–S9)
+- **Unidade de Ponto = 1 Replicação Pareada Independente** (Controle $v_N$ vs. Tratamento $v_N + \\Delta P$, com pré-registro `sha256`, na temperatura de produção, critérios positivos e negativos + $\\ge 20\\%$ de anti-casos `is_anti_case=true`).
+- **Aprovação em Replicação Pareada (`+1 ponto`):** Superioridade pareada ($P(\\Delta > 0) \\ge 0.90$ ou McNemar $p \\le 0.10$), aprovação $\\ge 90\\%$, zero Contaminação Tipo A/B e zero regressão em anti-casos.
+- **Falha em Replicação Pareada (`-2 pontos`):** Contaminação Tipo A/B, regressão em anti-casos ou desempenho inferior ao Controle.
+- **Promoção a Teoria (`🏆 TEORIA CONSOLIDADA`):** Exige **`>= 8 pontos`** acumulados em **`>= 3 domínios/agentes distintos`** e **`>= 2 famílias de modelos`**.
+- **Refutação de Escopo (`<= -4 pontos`):** Declarada **`❌ X REFUTADA NO ESCOPO`**, bloqueando o padrão no escopo onde o dano foi replicado.
 
-## 3. Ranking de Hipóteses em Teste
-- **1º `H-04` (`+3 pts` — 🧪 Em Teste):** Explicitação de Protocolo de API por Contraste Sintático (`@` vs `null`/`""`). Proíbe `null`, `None`, `undefined` e `""` em APIs restritivas (ex: Situator) e instrui uso de `'@'` para campos não aplicáveis.
-- **2º `H-03` (`+1 pt` — 🧪 Em Teste):** Guardrail de Re-hidratação Silenciosa de Estado. Proíbe envio do nome textual da variável simbólica (ex: `"singleAccountId"`) para a tool se ela estiver vazia, forçando execução prévia silenciosa de `getUserByPhone`.
-- **3º `H-08` (`+1 pt` — 🧪 Em Teste):** Disparo Amplo de MCP Tool (`send_whatsapp_message`) em qualquer sinal de interesse pós-valores em chamadas de voz.
+## 3. Auditoria Epistemológica e Migração Histórica (`T-01` -> `G-SYMB` + `G-FEWSHOT-STRUCT` + `G-COD`)
+- **Auditoria do legado `T-01` (`H-02`):** O antigo pacote composto `T-01` foi desmembrado nas hipóteses gerais ortogonais **`G-SYMB`**, **`G-FEWSHOT-STRUCT`** e **`G-COD`**, recontando honestamente por replicação independente (`+1 pt` em `kravi_sac_whatsapp`) após correção do vazamento simbólico Tipo B com **`G-PRECOND`**.
 
-## 4. Hipóteses Refutadas (`<= -4 pontos` — Proibição Permanente)
-- **`H-01` (`-4 pontos` — ❌ X REFUTADA):** Few-Shot com Valores Literais de Casos Antigos (ex: `1277`, `275983`, `15799`). Causa Contaminação Tipo A (Cross-Tenant Data Leakage por anchoring bias). Substituída por `T-01`.""",
-    "active_memory_xml": """<memoria_ativa versao="1.0" escopo="prompts_de_clientes_tabela_prompts">
+## 4. Ranking de Hipóteses Gerais em Teste (`G-*`)
+- **1º `G-SYMB` (`+1 pt`, 1/3 domínios — Legado `T-01`/`H-02`):** Isolamento de Argumentos Dinâmicos por Ponteiros Simbólicos Tipados (`[var]`).
+- **2º `G-PRIOR` (`+1 pt`, 1/3 domínios — Legado `H-04`):** Override de Prior de Pré-Treinamento por Contraste Sintático Negativo + Consequência de Erro (ex: `'@'` vs `null`/`""`).
+- **3º `G-PRECOND` (`+1 pt`, 1/3 domínios — Legado `H-03`):** Cláusula de Pré-Condição e Re-Hidratação Silenciosa quando Ponteiro Simbólico é Nulo.
+- **4º `G-FEWSHOT-STRUCT` (`+1 pt`, 1/3 domínios — Legado `T-01`/`H-02`):** Few-Shot de Transição de Estado Explícita (`<estado_sessao_anterior>` -> `<raciocinio_interno_cod>` -> `<chamada_ferramenta>` -> `<estado_sessao_atualizado>`).
+- **5º `G-FALLBACK` (`+1 pt`, 1/3 domínios — Legado `H-09`):** Cadeia Hierárquica Univariada Estrita de Identificação (Um Identificador por Turno).
+- **6º `G-AMBIG` (`+1 pt`, 1/3 domínios — Legado `H-09`):** Escalonamento Determinístico quando Busca Retorna Múltiplos Candidatos sem Chave de Desambiguação.
+- **7º `G-COD` (`0 pts`, 0/3 domínios — Legado `T-01`/`H-02`):** Chain of Draft (CoD) Conectado à Decisão de Ferramenta e Estado.
+- **8º `G-ASYM` (`0 pts`, 0/3 domínios — Legado `H-08`):** Regra de Decisão Assimétrica sob Alto Custo de Falso Negativo Comercial.
+
+## 5. Hipóteses Refutadas no Escopo (`<= -4 pontos` — Bloqueio de Escopo)
+- **`G-LIT-ID` (`-4 pontos` — Legado `H-01` — ❌ X REFUTADA NO ESCOPO):** Exemplos Few-Shot com IDs Primários/Relacionais Literais em Fluxos Multi-Tenant Dinâmicos. Causa Contaminação Tipo A por anchoring bias.""",
+    "active_memory_xml": """<memoria_ativa versao="2.0" escopo="prompts_de_clientes_tabela_prompts" gerada_por="prompt_science/score.py">
   <regras_de_geracao>
     <regra tipo="IMUTAVEL" id="R001">Todo prompt de cliente deve declarar explicitamente persona, contexto, formato de output e critério de encerramento.</regra>
     <regra tipo="IMUTAVEL" id="R002">Estrutura de output sempre em XML ou Markdown conforme padrão da empresa. Nunca misturar os dois no mesmo bloco.</regra>
-    <regra tipo="IMUTAVEL" id="R003_T01" origem="docs/prompt_hypotheses_ledger.md#T-01">Isolamento de Estado por Variáveis Simbólicas: Todo prompt de cliente que acione ferramentas MCP deve declarar um bloco &lt;variaveis&gt; com ponteiros simbólicos entre colchetes (ex: [singleUserId], [singleAccountId], [unitId]) e jamais conter IDs numéricos literais de casos antigos nos exemplos ou regras.</regra>
-    <regra tipo="MUTAVEL" id="R004_H04" ultima_atualizacao="2026-10-21">Em integrações com APIs que rejeitam null/vazio (ex: Situator), explicitar por contraste sintático o uso de '@' para campos não aplicáveis em vez de null, None ou "".</regra>
-    <regra tipo="MUTAVEL" id="R005_H03" ultima_atualizacao="2026-10-21">Guardrail de Re-hidratação Silenciosa: Proibir o envio do nome literal da variável simbólica (ex: "singleAccountId") para a tool se o valor numérico não constar no histórico da sessão, forçando a execução prévia da tool de identificação (getUserByPhone).</regra>
+    <regra tipo="IMUTAVEL" id="R003_T01" escopo_refutado="G-LIT-ID" origem="docs/prompt_hypotheses_ledger.md#G-LIT-ID">Proibição de IDs Literais de Sessão (Escopo Refutado G-LIT-ID / H-01; decomposto em G-SYMB + G-FEWSHOT-STRUCT + G-COD): Em prompts com tool calling que manipulam chaves dinâmicas de sessão/tenant, é proibido inserir IDs numéricos literais de casos antigos em exemplos ou regras.</regra>
+    <regra tipo="MUTAVEL" id="R004_G_SYMB" status_cientifico="em_teste_score_1pt" legado="T-01/H-02" ultima_atualizacao="2026-10-28">[G-SYMB | +1 pt] Isolamento de Argumentos Dinâmicos por Ponteiros Simbólicos Tipados ([var]) em bloco &lt;variaveis&gt;.</regra>
+    <regra tipo="MUTAVEL" id="R005_G_PRIOR" status_cientifico="em_teste_score_1pt" legado="H-04" ultima_atualizacao="2026-10-28">[G-PRIOR | +1 pt] Override de Prior de Pré-Treinamento por Contraste Sintático Negativo + Consequência de Erro (ex: '@' em vez de null/"").</regra>
+    <regra tipo="MUTAVEL" id="R006_G_PRECOND" status_cientifico="em_teste_score_1pt" legado="H-03" ultima_atualizacao="2026-10-28">[G-PRECOND | +1 pt] Cláusula de Pré-Condição e Re-Hidratação Silenciosa quando Ponteiro Simbólico é Nulo.</regra>
   </regras_de_geracao>
   <erros_registrados>
-    <erro id="E001" status="aberto" data="2026-10-20" ref_hipotese="H-01">Inserir exemplos reais de casos antigos com IDs literais (Contaminação Tipo A).</erro>
-    <erro id="E002" status="aberto" data="2026-10-20" ref_hipotese="REF-01">Enviar o nome textual do placeholder ("singleAccountId") como argumento da tool quando o histórico está truncado (Contaminação Tipo B).</erro>
+    <erro id="E001" status="aberto" data="2026-10-20" ref_hipotese="G-LIT-ID/H-01">Inserir exemplos reais de casos antigos com IDs literais (Contaminação Tipo A).</erro>
+    <erro id="E002" status="aberto" data="2026-10-20" ref_hipotese="G-PRECOND/REF-01">Enviar o nome textual do placeholder ("singleAccountId") como argumento da tool quando o histórico está truncado (Contaminação Tipo B).</erro>
+    <erro id="E003" status="resolvido" data="2026-10-28" ref_hipotese="AUDITORIA-M-SPEM-V2">Avaliar casos apenas pela ausência de IDs proibidos sem verificar resolução positiva de argumentos e anti-casos.</erro>
   </erros_registrados>
 </memoria_ativa>""",
     "canonical_prompt_anatomy": """# Anatomia Modular Canônica do Prompt (5 Blocos Ortogonais)
@@ -489,6 +500,9 @@ def _serialize_eval_case(c: EvalDataset) -> Dict[str, Any]:
         "requires_tool": bool(c.requires_tool),
         "expected_tool_name": c.expected_tool_name,
         "is_refutation_case": bool(getattr(c, "is_refutation_case", False)),
+        "is_anti_case": bool(getattr(c, "is_anti_case", False)),
+        "forbid_tool_call": bool(getattr(c, "forbid_tool_call", False)),
+        "expected_tool_args": getattr(c, "expected_tool_args", None) or {},
         "forbidden_literal_ids": getattr(c, "forbidden_literal_ids", None) or [],
         "forbidden_symbolic_placeholders": getattr(c, "forbidden_symbolic_placeholders", None) or [],
         "created_by": getattr(c, "created_by", None),
@@ -502,7 +516,7 @@ async def list_prompt_eval_datasets_impl(
     channel: Optional[str] = None,
     _session_factory: Any = None,
 ) -> Dict[str, Any]:
-    """Lista todos os casos de teste ativos (incluindo Casos de Refutação Popperianos) de um prompt/canal."""
+    """Lista todos os casos de teste ativos (incluindo Casos de Refutação Popperianos e Anti-Casos S5) de um prompt/canal."""
     factory = _session_factory or async_session_maker
     async with factory() as session:
         stmt = select(EvalDataset).where(EvalDataset.is_active == True).order_by(desc(EvalDataset.created_at))
@@ -518,6 +532,7 @@ async def list_prompt_eval_datasets_impl(
             "channel": channel,
             "total_cases": len(cases),
             "refutation_cases_count": sum(1 for x in cases if x.get("is_refutation_case")),
+            "anti_cases_count": sum(1 for x in cases if x.get("is_anti_case")),
             "cases": cases,
         }
 
@@ -535,14 +550,18 @@ async def manage_prompt_eval_case_impl(
     requires_tool: bool = False,
     expected_tool_name: Optional[str] = None,
     is_refutation_case: bool = False,
+    is_anti_case: bool = False,
+    forbid_tool_call: bool = False,
+    expected_tool_args: Optional[Dict[str, Any]] = None,
     forbidden_literal_ids: Optional[List[str]] = None,
     forbidden_symbolic_placeholders: Optional[List[str]] = None,
     author_email: str = "prompt_ops_copilot",
     _session_factory: Any = None,
 ) -> Dict[str, Any]:
     """
-    Cria, edita ou exclui (soft-delete) um caso de teste de Evals seguindo o protocolo científico de Prompt Science:
-    suporta Casos de Refutação Popperianos (is_refutation_case=True) e guardrails anti-contaminação Tipo A/B.
+    Cria, edita ou exclui (soft-delete) um caso de teste de Evals seguindo o protocolo científico de Prompt Science (M-SPEM v2):
+    suporta Casos de Refutação Popperianos (is_refutation_case=True), Anti-Casos S5 (is_anti_case=True, forbid_tool_call=True),
+    critérios positivos de argumentos (expected_tool_args) e guardrails anti-contaminação Tipo A/B.
     """
     act = (action or "create").strip().lower()
     factory = _session_factory or async_session_maker
@@ -563,6 +582,9 @@ async def manage_prompt_eval_case_impl(
                 requires_tool=bool(requires_tool),
                 expected_tool_name=expected_tool_name,
                 is_refutation_case=bool(is_refutation_case),
+                is_anti_case=bool(is_anti_case),
+                forbid_tool_call=bool(forbid_tool_call),
+                expected_tool_args=expected_tool_args or {},
                 forbidden_literal_ids=forbidden_literal_ids or [],
                 forbidden_symbolic_placeholders=forbidden_symbolic_placeholders or [],
                 created_by=author_email,
@@ -600,6 +622,12 @@ async def manage_prompt_eval_case_impl(
                 item.expected_tool_name = expected_tool_name
             if is_refutation_case is not None:
                 item.is_refutation_case = bool(is_refutation_case)
+            if is_anti_case is not None:
+                item.is_anti_case = bool(is_anti_case)
+            if forbid_tool_call is not None:
+                item.forbid_tool_call = bool(forbid_tool_call)
+            if expected_tool_args is not None:
+                item.expected_tool_args = expected_tool_args
             if forbidden_literal_ids is not None:
                 item.forbidden_literal_ids = forbidden_literal_ids
             if forbidden_symbolic_placeholders is not None:
@@ -719,6 +747,8 @@ async def run_prompt_eval_suite_impl(
                 version_id=version_obj.id if version_obj else None,
                 forbidden_literal_ids=getattr(c, "forbidden_literal_ids", None) or [],
                 forbidden_symbolic_placeholders=getattr(c, "forbidden_symbolic_placeholders", None) or [],
+                forbid_tool_call=bool(getattr(c, "forbid_tool_call", False)),
+                expected_tool_args=getattr(c, "expected_tool_args", None) or {},
             )
             if ev["passed"]:
                 passed_count += 1
@@ -740,6 +770,7 @@ async def run_prompt_eval_suite_impl(
                 "dataset_id": str(c.id),
                 "scenario_name": c.scenario_name,
                 "is_refutation_case": bool(getattr(c, "is_refutation_case", False)),
+                "is_anti_case": bool(getattr(c, "is_anti_case", False)),
                 "passed": ev["passed"],
                 "is_contaminated": ev.get("is_contaminated", False),
                 "contamination_reason": ev.get("contamination_reason"),
@@ -935,11 +966,12 @@ async def mcp_list_prompt_eval_datasets(
 @prompt_ops_mcp.tool(
     name="manage_prompt_eval_case",
     description=(
-        "QUANDO USAR: Sempre que precisar criar ('create'), editar ('update') ou excluir ('delete') um caso de teste "
-        "ou Caso de Refutação Científica Popperiano nos Evals do prompt. "
-        "REGRA CIENTÍFICA (prompt_engineer.md): Ao testar uma hipótese ou corrigir um bug de atendimento/tools, "
-        "defina is_refutation_case=True, preencha forbidden_literal_ids (IDs de casos antigos que não podem vazar - Contaminação Tipo A) "
-        "e forbidden_symbolic_placeholders (nomes de variáveis simbólicas que não podem ser enviadas cruas - Contaminação Tipo B)."
+        "QUANDO USAR: Sempre que precisar criar ('create'), editar ('update') ou excluir ('delete') um caso de teste, "
+        "Caso de Refutação Científica Popperiano ou Anti-Caso S5 nos Evals do prompt. "
+        "REGRA CIENTÍFICA (M-SPEM v2 / prompt_engineer.md): Ao testar uma hipótese ou corrigir um bug de atendimento/tools, "
+        "defina is_refutation_case=True, preencha forbidden_literal_ids (Contaminação Tipo A), "
+        "forbidden_symbolic_placeholders (Contaminação Tipo B) e expected_tool_args (critério positivo), "
+        "além de criar >= 20% de anti-casos (is_anti_case=True, forbid_tool_call=True)."
     ),
 )
 async def mcp_manage_prompt_eval_case(
@@ -954,6 +986,9 @@ async def mcp_manage_prompt_eval_case(
     requires_tool: bool = False,
     expected_tool_name: Optional[str] = None,
     is_refutation_case: bool = False,
+    is_anti_case: bool = False,
+    forbid_tool_call: bool = False,
+    expected_tool_args: Optional[Dict[str, Any]] = None,
     forbidden_literal_ids: Optional[List[str]] = None,
     forbidden_symbolic_placeholders: Optional[List[str]] = None,
 ) -> str:
@@ -969,6 +1004,9 @@ async def mcp_manage_prompt_eval_case(
         requires_tool=requires_tool,
         expected_tool_name=expected_tool_name,
         is_refutation_case=is_refutation_case,
+        is_anti_case=is_anti_case,
+        forbid_tool_call=forbid_tool_call,
+        expected_tool_args=expected_tool_args,
         forbidden_literal_ids=forbidden_literal_ids,
         forbidden_symbolic_placeholders=forbidden_symbolic_placeholders,
     )
@@ -1191,10 +1229,10 @@ def get_generator_openai_tools() -> List[Dict[str, Any]]:
                 "name": "manage_prompt_eval_case",
                 "description": (
                     "QUANDO USAR: Acione sempre que o usuário pedir para criar, editar ou excluir um caso de teste de Eval, "
-                    "ou quando você criar um Caso de Refutação Científica Popperiano (prompt_engineer.md) para testar uma hipótese/correção. "
+                    "ou quando você criar um Caso de Refutação Científica Popperiano / Anti-Caso S5 (prompt_engineer.md) para testar uma hipótese/correção. "
                     "COMO USAR: Passe action='create' (ou 'update'/'delete'), scenario_name, user_message, expected_criteria (rubrica rigorosa para o LLM Judge), "
-                    "requires_tool, expected_tool_name, is_refutation_case=True (se for teste de refutação), "
-                    "forbidden_literal_ids (IDs antigos proibidos - Contaminação Tipo A) e forbidden_symbolic_placeholders (ex: '[singleAccountId]' - Contaminação Tipo B)."
+                    "requires_tool, expected_tool_name, is_refutation_case=True (se for teste de refutação), is_anti_case=True e forbid_tool_call=True (se for anti-caso S5), "
+                    "expected_tool_args (critério positivo), forbidden_literal_ids (Contaminação Tipo A) e forbidden_symbolic_placeholders (Contaminação Tipo B)."
                 ),
                 "parameters": {
                     "type": "object",
@@ -1231,6 +1269,18 @@ def get_generator_openai_tools() -> List[Dict[str, Any]]:
                         "is_refutation_case": {
                             "type": "boolean",
                             "description": "True se este caso for um Experimento de Refutação Científica Popperiano (out-of-distribution/adversarial).",
+                        },
+                        "is_anti_case": {
+                            "type": "boolean",
+                            "description": "True se este caso for um Anti-Caso de Especificidade S5 (>= 20% da suíte, onde a mutação NÃO deve disparar).",
+                        },
+                        "forbid_tool_call": {
+                            "type": "boolean",
+                            "description": "Se True, reprova caso o agente acione qualquer tool MCP (usado em anti-casos de falso positivo).",
+                        },
+                        "expected_tool_args": {
+                            "type": "object",
+                            "description": "Mapa de argumentos esperados na chamada da tool (critério positivo S5).",
                         },
                         "forbidden_literal_ids": {
                             "type": "array",
@@ -1394,6 +1444,9 @@ async def execute_generator_tool_call(
             requires_tool=bool(arguments.get("requires_tool", False)),
             expected_tool_name=arguments.get("expected_tool_name"),
             is_refutation_case=bool(arguments.get("is_refutation_case", False)),
+            is_anti_case=bool(arguments.get("is_anti_case", False)),
+            forbid_tool_call=bool(arguments.get("forbid_tool_call", False)),
+            expected_tool_args=arguments.get("expected_tool_args"),
             forbidden_literal_ids=arguments.get("forbidden_literal_ids"),
             forbidden_symbolic_placeholders=arguments.get("forbidden_symbolic_placeholders"),
             author_email="prompt_ops_copilot",
