@@ -123,7 +123,22 @@ async def evaluate_single_turn_case(
                 tool_call_valid = False
                 break
 
-    # 4. Formata o sumário de tools para contextualizar o LLM Juiz
+    # 4. Formata o sumário de histórico recente e tools para contextualizar o LLM Juiz
+    if history:
+        history_lines = []
+        for h in history:
+            role = h.get("role", "desconhecido")
+            cnt = h.get("content") or ""
+            tc = h.get("tool_calls")
+            if tc:
+                names = [c.get("function", {}).get("name") or c.get("name") for c in tc]
+                history_lines.append(f"- [{role.upper()}]: (Chamou tool {', '.join(filter(None, names))}) {cnt}".strip())
+            else:
+                history_lines.append(f"- [{role.upper()}]: {cnt}")
+        chat_history_summary = "\n".join(history_lines)
+    else:
+        chat_history_summary = "Nenhum histórico anterior (Início de conversa / Cold Start)."
+
     if tool_calls_executed:
         tools_summary = "\n".join([
             f"- Ferramenta '{t['tool_name']}' acionada com parâmetros: {json.dumps(t['input'], ensure_ascii=False)} | Retorno MCP: {str(t['output'])[:250]}"
@@ -137,16 +152,18 @@ async def evaluate_single_turn_case(
     judge_system_prompt = (
         "Você é um LLM Juiz imparcial e rigoroso da MindFlow. "
         "Sua função é avaliar se as ferramentas executadas e a resposta final formulada pelo assistente "
-        "atenderam estritamente aos critérios esperados de negócio (rubrica). "
+        "atenderam estritamente aos critérios esperados de negócio (rubrica), considerando o histórico recente da conversa. "
         "Se o critério exigir acionamento de uma tool específica e ela não tiver sido executada, você DEVE reprovar. "
+        "Se o critério proibir acionamento de tool (anti-caso) ou proibir repetição desnecessária de perguntas já respondidas no histórico, aplique o rigor exigido. "
         "Você deve retornar APENAS um JSON no formato: "
         '{"passed": true/false, "score": 0.0-1.0, "reasoning": "explicação concisa e objetiva"}'
     )
 
     judge_user_content = (
-        f"### Mensagem do Usuário / Lead:\n{user_msg}\n\n"
-        f"### Ações de Ferramentas (MCP) Executadas:\n{tools_summary}\n\n"
-        f"### Resposta Final Gerada pelo Bot:\n{generated_text}\n\n"
+        f"### Histórico Recente da Conversa (Contexto Prévio):\n{chat_history_summary}\n\n"
+        f"### Mensagem Atual do Usuário / Lead:\n{user_msg}\n\n"
+        f"### Ações de Ferramentas (MCP) Executadas no Turno Atual:\n{tools_summary}\n\n"
+        f"### Resposta Final Gerada pelo Bot no Turno Atual:\n{generated_text}\n\n"
         f"### Critério Esperado (Rubrica de Avaliação):\n{expected_criteria}"
     )
 

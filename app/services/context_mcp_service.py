@@ -545,6 +545,7 @@ async def manage_prompt_eval_case_impl(
     case_id: Optional[str] = None,
     scenario_name: Optional[str] = None,
     user_message: Optional[str] = None,
+    chat_history: Optional[List[Dict[str, Any]]] = None,
     input_data: Optional[Dict[str, Any]] = None,
     expected_criteria: Optional[str] = None,
     requires_tool: bool = False,
@@ -561,7 +562,7 @@ async def manage_prompt_eval_case_impl(
     """
     Cria, edita ou exclui (soft-delete) um caso de teste de Evals seguindo o protocolo científico de Prompt Science (M-SPEM v2):
     suporta Casos de Refutação Popperianos (is_refutation_case=True), Anti-Casos S5 (is_anti_case=True, forbid_tool_call=True),
-    critérios positivos de argumentos (expected_tool_args) e guardrails anti-contaminação Tipo A/B.
+    memória recente multi-turn (chat_history), critérios positivos de argumentos (expected_tool_args) e guardrails anti-contaminação Tipo A/B.
     """
     act = (action or "create").strip().lower()
     factory = _session_factory or async_session_maker
@@ -570,13 +571,22 @@ async def manage_prompt_eval_case_impl(
         if act == "create":
             if prompt_id is None:
                 raise ValueError("prompt_id é obrigatório para criar um caso de Eval.")
-            final_input = input_data if input_data is not None else {"user_message": user_message or ""}
+            if input_data is not None:
+                final_input = dict(input_data)
+                if chat_history is not None and "chat_history" not in final_input:
+                    final_input["chat_history"] = chat_history
+                if user_message is not None and "user_message" not in final_input:
+                    final_input["user_message"] = user_message
+            else:
+                final_input = {"user_message": user_message or ""}
+                if chat_history:
+                    final_input["chat_history"] = chat_history
             item = EvalDataset(
                 prompt_id=int(prompt_id),
                 client_id=str(client_id or prompt_id),
                 channel=channel or "whatsapp",
                 scenario_name=scenario_name or "Caso de Teste Científico",
-                test_type="single_turn",
+                test_type="multi_turn" if (chat_history or (final_input.get("chat_history"))) else "single_turn",
                 input_data=final_input,
                 expected_criteria=expected_criteria or "",
                 requires_tool=bool(requires_tool),
@@ -608,12 +618,17 @@ async def manage_prompt_eval_case_impl(
         if act == "update":
             if scenario_name is not None:
                 item.scenario_name = scenario_name
-            if user_message is not None:
-                curr = dict(item.input_data or {})
-                curr["user_message"] = user_message
-                item.input_data = curr
-            elif input_data is not None:
+            if input_data is not None:
                 item.input_data = input_data
+            else:
+                curr = dict(item.input_data or {})
+                if user_message is not None:
+                    curr["user_message"] = user_message
+                if chat_history is not None:
+                    curr["chat_history"] = chat_history
+                item.input_data = curr
+            if chat_history or (item.input_data and item.input_data.get("chat_history")):
+                item.test_type = "multi_turn"
             if expected_criteria is not None:
                 item.expected_criteria = expected_criteria
             if requires_tool is not None:
@@ -1252,7 +1267,19 @@ def get_generator_openai_tools() -> List[Dict[str, Any]]:
                         },
                         "user_message": {
                             "type": "string",
-                            "description": "Mensagem enviada pelo lead/usuário para testar o agente.",
+                            "description": "Mensagem enviada pelo lead/usuário no turno atual para testar o agente.",
+                        },
+                        "chat_history": {
+                            "type": "array",
+                            "description": "Histórico de mensagens da conversa até o momento (turnos prévios: [{'role': 'user'|'assistant', 'content': str}]). Essencial para avaliar memória recente multi-turn.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "role": {"type": "string", "enum": ["user", "assistant", "system"]},
+                                    "content": {"type": "string"},
+                                },
+                                "required": ["role", "content"],
+                            },
                         },
                         "expected_criteria": {
                             "type": "string",
@@ -1439,6 +1466,7 @@ async def execute_generator_tool_call(
             case_id=arguments.get("case_id"),
             scenario_name=arguments.get("scenario_name"),
             user_message=arguments.get("user_message"),
+            chat_history=arguments.get("chat_history"),
             input_data=arguments.get("input_data"),
             expected_criteria=arguments.get("expected_criteria"),
             requires_tool=bool(arguments.get("requires_tool", False)),
