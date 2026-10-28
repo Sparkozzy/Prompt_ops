@@ -136,6 +136,7 @@ async def suggest_prompt_modifications(payload: MetaGeneratorRequest):
         audit_report=res.get("audit_report"),
         updated_active_memory_xml=updated_mem,
         tools_consulted=res.get("tools_consulted", []),
+        action_proposals=res.get("action_proposals", []),
     )
 
 

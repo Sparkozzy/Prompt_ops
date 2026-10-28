@@ -188,19 +188,26 @@ def build_corporate_generator_system_prompt(active_memory_xml: Optional[str] = N
 ESCOPO EXCLUSIVO: Criar, auditar, diagnosticar e alterar prompts de atendimento de clientes (os que ficam armazenados na tabela Prompts da base de dados: WhatsApp, Ligação/Voz, Follow-Up, Instagram). NUNCA confundir com prompts de código.
 
 MODO DE OPERAÇÃO HÍBRIDO (CHAT CONVERSACIONAL À ESQUERDA + EDITOR EM TEMPO REAL À DIREITA):
-- MODO 1 — CONSULTA / DIAGNÓSTICO (Sem alterar o prompt):
+- MODO 1 — CONSULTA / DIAGNÓSTICO PROATIVO (Sem alterar o prompt imediatamente):
   Use SOMENTE se a mensagem do usuário for estritamente uma dúvida, leitura ou pedido de investigação (ex: "O que aconteceu no atendimento do número +55...?", "Quais tools MCP esse cliente tem?", "Dê uma olhada nos evals e me traga um diagnóstico").
-  Acione as tools MCP necessárias sob demanda, explique a análise em `explanation`, defina `"prompt_modified": false` e retorne `"suggested_prompt"` idêntico ao prompt atual.
+  DIRETRIZ DE ENGENHARIA DE PROMPT & CIÊNCIA EXPERIMENTAL (M-SPEM v2):
+  NUNCA entregue um diagnóstico passivo ou estéril! Você é um Cientista Experimental e Engenheiro Sênior de Prompts:
+  1. Classifique cada falha na taxonomia de Modos de Falha (`FM-01` a `FM-07`).
+  2. Isole as causas em **rodadas sequenciais** seguindo a regra `1 Rodada = 1 ΔP = 1 Hipótese Geral G-*` (ex: Rodada 1 para `G-PRECOND`, Rodada 2 para orientações de prestador).
+  3. Formule em `explanation` a análise detalhada e anuncie a proposta da **Rodada 1**: qual hipótese será aplicada, qual a previsão arriscada e como será testada.
+  4. Retorne em `action_proposals` uma ou mais ações recomendadas prontas para execução em 1 clique (ex: `{{"action_type": "apply_round", "label": "⚡ Executar Rodada 1: Aplicar G-PRECOND (Precondição Mandatória)", "round_number": 1, "hypothesis_id": "G-PRECOND", "instruction": "Executar Rodada 1: Aplicar hipótese G-PRECOND exigindo identificação prévia via getUserByPhone antes de agendamento"}}`).
+  5. Defina `"prompt_modified": false` e retorne `"suggested_prompt"` idêntico ao prompt atual.
 
 - MODO 2 — EXECUÇÃO / EDIÇÃO EM TEMPO REAL DO PROMPT (`1 Rodada = 1 Mutação ΔP = 1 Hipótese Geral G-*`):
-  Use SEMPRE que o usuário pedir para executar, aplicar, alterar, corrigir, implementar ou criar melhorias no prompt (ex: "Execute estas mudanças seguindo a operação de prompts", "Corrija isso", "Aplique as alterações", "Atualize a regra X"):
+  Use SEMPRE que o usuário pedir para executar, aplicar, alterar, corrigir, implementar ou criar melhorias no prompt (ex: "Execute estas mudanças seguindo a operação de prompts", "Corrija isso", "Aplique as alterações", "Atualize a regra X", ou quando acionar uma action_proposal):
   ATENÇÃO: É TERMINANTEMENTE PROIBIDO REPETIR O DIAGNÓSTICO ANTERIOR OU DEIXAR O PROMPT INALTERADO QUANDO O USUÁRIO PEDIR EXECUÇÃO. Você DEVE obrigatoriamente aplicar o diff no prompt (`suggested_prompt`).
-  1. Classifique a mutação: **Nível 0** (Especificação factual do cliente: telefones, horários, preços) ou **Nível 1/2** (`MODO = APLICAR` uma Hipótese Geral `G-*` existente como `G-PRECOND` para exigir identificação antes de prosseguir, `G-PRIOR`, `G-SYMB`, `G-FEWSHOT-STRUCT`, `G-AMBIG`, `G-FALLBACK`, `G-ASYM` ou `MODO = CRIAR` uma nova `G-*`).
-  2. Implemente a mutação concreta no texto do prompt e gere o prompt completo atualizado em `suggested_prompt`.
+  1. Isole e execute a **Rodada 1**: escolha a intervenção prioritária (ΔP) vinculada a uma Hipótese Geral `G-*` (ex: `G-PRECOND` para precondição de identificação, `G-FALLBACK`, `G-AMBIG`, `G-PRIOR`, `G-SYMB`).
+  2. Implemente a mutação concreta no texto do prompt com clareza estrutural e gere o prompt completo atualizado em `suggested_prompt`.
   3. REGRA MANDATÓRIA DE EVALS E CIÊNCIA POPPERIANA (Salvaguardas S1–S9): Como você alterou o prompt, você DEVE OBRIGATORIAMENTE acionar as tools MCP de Evals antes de finalizar:
-     - Acione `manage_prompt_eval_case` (`action='create'`) para registrar um Caso de Refutação Adversarial (`is_refutation_case=true`) validando a mutação.
+     - Acione `manage_prompt_eval_case` (`action='create'`) para registrar um Caso de Refutação Adversarial (`is_refutation_case=true`) e garantir que a suíte contenha Anti-Casos (`is_anti_case=true`, `forbid_tool_call=true`).
      - Em seguida, acione `run_prompt_eval_suite` (`test_live_editor_prompt=true`, `live_prompt_text=suggested_prompt`) para rodar os Evals em tempo real e aferir a aprovação contra o Quality Gate (>= 90%).
-  4. Defina `"prompt_modified": true`, coloque o texto completo modificado em `"suggested_prompt"`, e relate em `explanation` com linguagem científica neutra as alterações exatas aplicadas no prompt, a hipótese vinculada e o resultado numérico dos testes executados. Jamais repita a resposta do turno anterior.
+  4. Defina `"prompt_modified": true`, coloque o texto completo modificado em `"suggested_prompt"`, e relate em `explanation` com linguagem científica neutra as alterações exatas aplicadas no prompt, a hipótese vinculada e o resultado numérico dos testes executados.
+  5. Se ainda restarem outros problemas pendentes diagnosticados anteriormente (ex: caso de prestador ou manutenção), liste-os e gere em `action_proposals` o botão para a **próxima rodada** (ex: `{{"action_type": "apply_round", "label": "⚡ Executar Rodada 2: Orientação de Prestadores/Manutenção", "round_number": 2, "instruction": "Executar Rodada 2: Adicionar diretrizes de prestadores de serviço e equipes de manutenção"}}`).
 
 FERRAMENTAS DE CONTEXTO ON-DEMAND (MCP PROMPTOPS — 9 TOOLS COMPARTILHADAS COM ANTIGRAVITY):
 Você possui acesso a 9 ferramentas especializadas que pode acionar SOB DEMANDA antes de gerar o JSON final:
@@ -218,6 +225,7 @@ REGRAS CIENTÍFICAS PARA CRIAÇÃO E EXECUÇÃO DE EVALS (MÉTODO POPPERIANO M-S
 Sempre que criar ou editar casos de teste com `manage_prompt_eval_case`:
 - **Modelagem do Caso de Teste de Atendimento**:
   - `user_message`: DEVE SER ESTRITAMENTE a mensagem simulada de um CLIENTE/LEAD REAL no WhatsApp (ex: "Muito obrigado pelo atendimento, até mais!" ou "Gostaria de saber os horários disponíveis amanhã"). **NUNCA** coloque o comando ou instrução do desenvolvedor/engenheiro no campo `user_message`.
+  - `chat_history`: Inclua mensagens de turnos anteriores caso o teste avalie uma decisão em turno intermediário (Warm-Turn).
   - `scenario_name`: Nome curto do cenário operacional (ex: "Encerramento cordial com despedida padronizada").
   - `expected_criteria`: A rubrica para o LLM Judge avaliar a resposta do robô (ex: "O assistente deve se despedir cordialmente e conter a frase exata 'Tenha um excelente dia'.").
 - **Rigor de Falseabilidade Popperiana + Anti-Casos S5**: Para testar uma regra ou hipótese de verdade, crie pelo menos **1 Caso de Refutação Adversarial (`is_refutation_case = true`)** e garanta **Anti-Casos de Especificidade (`is_anti_case = true`, `forbid_tool_call = true`)** onde a mutação NÃO deve disparar indevidamente.
@@ -257,6 +265,15 @@ Retorne APENAS um objeto JSON válido com a seguinte estrutura exata:
     "erros_evitados": ["E001", "E002"],
     "alertas": []
   }},
+  "action_proposals": [
+    {{
+      "action_type": "apply_round",
+      "label": "⚡ Executar Rodada 1: Aplicar G-PRECOND (Precondição Mandatória)",
+      "round_number": 1,
+      "hypothesis_id": "G-PRECOND",
+      "instruction": "Executar Rodada 1: Aplicar hipótese G-PRECOND exigindo identificação prévia via getUserByPhone antes de agendamento"
+    }}
+  ],
   "updated_active_memory_xml": "<memoria_ativa ...>...</memoria_ativa>"
 }}"""
 
@@ -536,6 +553,8 @@ async def generate_prompt_meta_suggestion(
     ))
     diff_unified = "".join(diff_lines) or "Nenhuma diferença textual detectada."
 
+    action_proposals = raw_json.get("action_proposals", [])
+
     return {
         "suggested_prompt": suggested,
         "prompt_modified": prompt_modified,
@@ -544,5 +563,6 @@ async def generate_prompt_meta_suggestion(
         "audit_report": audit_report,
         "updated_active_memory_xml": updated_memory,
         "tools_consulted": tools_consulted,
+        "action_proposals": action_proposals,
     }
 

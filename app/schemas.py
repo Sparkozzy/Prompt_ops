@@ -243,6 +243,14 @@ class MetaGeneratorRequest(BaseModel):
     arena_history: Optional[Dict[str, List[Dict[str, Any]]]] = None
 
 
+class CopilotActionProposal(BaseModel):
+    action_type: str = "apply_round"  # "apply_round" ou "run_evals"
+    label: str
+    round_number: int = 1
+    hypothesis_id: Optional[str] = None
+    instruction: str
+
+
 class MetaGeneratorResponse(BaseModel):
     suggested_prompt: str
     prompt_modified: bool = False
@@ -251,6 +259,7 @@ class MetaGeneratorResponse(BaseModel):
     audit_report: Optional[Dict[str, Any]] = None
     updated_active_memory_xml: Optional[str] = None
     tools_consulted: List[GeneratorToolConsulted] = Field(default_factory=list)
+    action_proposals: List[CopilotActionProposal] = Field(default_factory=list)
 
 
 # ============================================================
