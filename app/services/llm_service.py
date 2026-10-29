@@ -4,6 +4,8 @@ from typing import Dict, Any, List, Optional
 from openai import AsyncOpenAI
 from app.config import settings
 
+from datetime import datetime
+
 _openai_client: Optional[AsyncOpenAI] = None
 
 def get_openai_client() -> AsyncOpenAI:
@@ -13,12 +15,98 @@ def get_openai_client() -> AsyncOpenAI:
         _openai_client = AsyncOpenAI(api_key=key)
     return _openai_client
 
-def render_prompt_template(template: str, variables: Dict[str, Any]) -> str:
-    """Substitui variáveis de template {{ variavel }} ou { variavel } com segurança."""
+def get_default_datetime_variables() -> Dict[str, str]:
+    """Retorna variáveis canônicas de data e horário atual (horário de Brasília UTC-3)."""
+    now = None
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    except Exception:
+        try:
+            import pytz
+            now = datetime.now(pytz.timezone("America/Sao_Paulo"))
+        except Exception:
+            from datetime import timezone, timedelta
+            now = datetime.now(timezone(timedelta(hours=-3)))
+
+    dias_semana = [
+        "Segunda-feira",
+        "Terça-feira",
+        "Quarta-feira",
+        "Quinta-feira",
+        "Sexta-feira",
+        "Sábado",
+        "Domingo"
+    ]
+    dia_semana = dias_semana[now.weekday()]
+
+    data_br = now.strftime("%d/%m/%Y")
+    hora_br = now.strftime("%H:%M:%S")
+    hora_curta = now.strftime("%H:%M")
+    data_hora_br = f"{data_br} {hora_br}"
+    data_iso = now.strftime("%Y-%m-%d")
+    data_atual_iso = now.replace(microsecond=0).isoformat()
+
+    return {
+        # Formatos comuns em português
+        "data_atual": data_br,
+        "hora_atual": hora_br,
+        "horario_atual": hora_br,
+        "data_hora_atual": data_hora_br,
+        "data_e_horario_atual": data_hora_br,
+        "data_e_hora_atual": data_hora_br,
+        "data": data_br,
+        "hora": hora_br,
+        "hoje": data_br,
+        "data_hoje": data_br,
+        "dia_da_semana": dia_semana,
+        "dia_semana": dia_semana,
+
+        # Padrões canônicos da MindFlow / Situator / Kravi
+        "data_atual_iso": data_atual_iso,
+        "data_iso": data_iso,
+        "data_hora": data_hora_br,
+
+        # Padrões n8n / Retell / templates legados
+        "$now": data_hora_br,
+        "now": data_hora_br,
+        "current_date": data_iso,
+        "current_time": hora_br,
+        "current_datetime": f"{data_iso} {hora_br}",
+    }
+
+def render_prompt_template(template: str, variables: Optional[Dict[str, Any]] = None) -> str:
+    """
+    Substitui variáveis de template {{ variavel }} ou { variavel } com segurança,
+    injetando automaticamente variáveis de data e horário atual em todas as execuções de todos os agentes.
+    Preserva valores explícitos passados em `variables` (essencial para reprodutibilidade de evals).
+    """
+    vars_merged = get_default_datetime_variables()
+    if variables:
+        for k, v in variables.items():
+            if v is not None:
+                vars_merged[k] = str(v)
+
     rendered = template
-    for k, v in variables.items():
-        rendered = rendered.replace(f"{{{{{k}}}}}", str(v))
-        rendered = rendered.replace(f"{{{k}}}", str(v))
+    for k, v in vars_merged.items():
+        v_str = str(v)
+        rendered = rendered.replace(f"{{{{{k}}}}}", v_str)
+        rendered = rendered.replace(f"{{{{ {k} }}}}", v_str)
+        rendered = rendered.replace(f"{{{k}}}", v_str)
+        rendered = rendered.replace(f"{{ {k} }}", v_str)
+
+    # Se o prompt não possuir tags ou variáveis de data/hora no corpo e não contiver bloco temporal,
+    # injeta o bloco canônico de data e horário atual para que o agente tenha consciência temporal.
+    has_date_tag = any(tag in template for tag in [
+        "{data_atual", "{data_atual_iso", "{hora_atual", "{data_hora", "{now", "{$now",
+        "{{data_atual", "{{data_atual_iso", "{{hora_atual", "{{now", "{{$now",
+        "<date_context>", "<informações_mutáveis>", "<contexto_temporal>", "<data_horario_atual>"
+    ])
+    if not has_date_tag:
+        now_info = vars_merged["data_hora_atual"]
+        dia_info = vars_merged["dia_da_semana"]
+        rendered += f"\n\n<contexto_temporal>\nData e horário atual (horário de Brasília UTC-3): {now_info} ({dia_info})\n</contexto_temporal>"
+
     return rendered
 
 async def generate_chat_response(
@@ -306,9 +394,11 @@ async def generate_prompt_meta_suggestion(
     meta_system_prompt = build_corporate_generator_system_prompt(effective_memory)
 
     has_arena_turns = bool(arena_history and (arena_history.get("A") or arena_history.get("B")))
+    dt_vars = get_default_datetime_variables()
     context_hint = (
         f"[Metadados da Sessão: prompt_id={prompt_id}, client_id={client_id}, "
-        f"channel={channel}, version_id={version_id}, arena_chat_disponivel={has_arena_turns}]"
+        f"channel={channel}, version_id={version_id}, arena_chat_disponivel={has_arena_turns}, "
+        f"data_hora_atual={dt_vars['data_hora_atual']} ({dt_vars['dia_da_semana']})]"
     )
 
     messages: List[Dict[str, Any]] = [
